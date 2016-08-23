@@ -70,7 +70,7 @@ public class ThreadPresenter implements ChanLoader.ChanLoaderCallback, PostAdapt
     private static final int POST_OPTION_HIDE = 12;
     private static final int POST_OPTION_OPEN_BROWSER = 13;
     private static final int POST_OPTION_FILTER_TRIPCODE = 14;
-
+    private static final int POST_OPTION_COPY_LINKS = 15;
     private WatchManager watchManager;
     private DatabaseManager databaseManager;
     private ReplyManager replyManager;
@@ -418,6 +418,7 @@ public class ThreadPresenter implements ChanLoader.ChanLoaderCallback, PostAdapt
         menu.add(new FloatingMenuItem(POST_OPTION_SHARE, R.string.post_share));
         menu.add(new FloatingMenuItem(POST_OPTION_COPY_TEXT, R.string.post_copy_text));
         menu.add(new FloatingMenuItem(POST_OPTION_REPORT, R.string.post_report));
+        menu.add(new FloatingMenuItem(POST_OPTION_COPY_LINKS, R.string.post_copy_link ));
 
         if (!loadable.isThreadMode()) {
             menu.add(new FloatingMenuItem(POST_OPTION_HIDE, R.string.post_hide));
@@ -503,6 +504,11 @@ public class ThreadPresenter implements ChanLoader.ChanLoaderCallback, PostAdapt
                 break;
             case POST_OPTION_HIDE:
                 threadPresenterCallback.hideThread(post);
+            case POST_OPTION_COPY_LINKS:
+                if (post.linkables.size() > 0) {
+                    threadPresenterCallback.copyPostLinkables(post.linkables);
+                }
+                break;
         }
     }
 
@@ -696,6 +702,8 @@ public class ThreadPresenter implements ChanLoader.ChanLoaderCallback, PostAdapt
         void showPostLinkables(List<PostLinkable> linkables);
 
         void clipboardPost(Post post);
+
+        void copyPostLinkables(List<PostLinkable> linkables);
 
         void showThread(Loadable threadLoadable);
 

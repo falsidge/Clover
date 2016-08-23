@@ -262,6 +262,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <string name="post_highlight_tripcode">Highlight tripcode</string>
     <string name="post_filter_tripcode">Filter tripcode</string>
     <string name="post_text_copied">Text copied to clipboard</string>
+    <string name="post_link_copied">Link copied to clipboard</string>
     <string name="post_quote">Quote</string>
     <string name="post_quote_text">Quote text</string>
     <string name="post_info">Info</string>
@@ -269,6 +270,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <string name="post_show_links">Show links</string>
     <string name="post_share">Share</string>
     <string name="post_copy_text">Copy text</string>
+    <string name="post_copy_link">Copy link</string>
     <string name="post_report">Report</string>
     <string name="post_hide">Hide</string>
     <string name="post_hidden">Thread hidden</string>

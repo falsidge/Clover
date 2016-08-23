@@ -260,6 +260,26 @@ public class ThreadLayout extends CoordinatorLayout implements ThreadPresenter.T
         Toast.makeText(getContext(), R.string.post_text_copied, Toast.LENGTH_SHORT).show();
     }
 
+    public void copyPostLinkables(final List<PostLinkable> linkables) {
+        String[] keys = new String[linkables.size()];
+        for (int i = 0; i < linkables.size(); i++) {
+            keys[i] = linkables.get(i).key;
+        }
+
+        new AlertDialog.Builder(getContext())
+                .setItems(keys, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        ClipboardManager clipboard = (ClipboardManager) AndroidUtils.getAppContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                        ClipData clip = ClipData.newPlainText("Post link", (String) linkables.get(which).value );
+                        clipboard.setPrimaryClip(clip);
+                        Toast.makeText(getContext(), R.string.post_link_copied, Toast.LENGTH_SHORT).show();
+
+                    }
+                })
+                .show();
+    }
+
     @Override
     public void openLink(final String link) {
         if (ChanSettings.openLinkConfirmation.get()) {
