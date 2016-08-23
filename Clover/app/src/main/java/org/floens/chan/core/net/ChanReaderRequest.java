@@ -22,32 +22,59 @@ import android.util.JsonReader;
 import com.android.volley.Response.ErrorListener;
 import com.android.volley.Response.Listener;
 
-import org.floens.chan.ChanApplication;
+import org.floens.chan.Chan;
 import org.floens.chan.chan.ChanUrls;
+import org.floens.chan.core.database.DatabaseManager;
+import org.floens.chan.core.database.DatabaseSavedReplyManager;
+import org.floens.chan.core.manager.FilterEngine;
+import org.floens.chan.core.model.Filter;
 import org.floens.chan.core.model.Loadable;
 import org.floens.chan.core.model.Post;
+import org.floens.chan.utils.Time;
 
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
-public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
-    private Loadable loadable;
-    private List<Post> cached;
+public class ChanReaderRequest extends JsonReaderRequest<ChanReaderRequest.ChanReaderResponse> {
+    private static final String TAG = "ChanReaderRequest";
+    private static final boolean LOG_TIMING = false;
 
-    private ChanReaderRequest(String url, Listener<List<Post>> listener, ErrorListener errorListener) {
-        super(url, listener, errorListener);
+    private static final int THREAD_COUNT;
+    private static ExecutorService EXECUTOR;
+
+    static {
+        THREAD_COUNT = Runtime.getRuntime().availableProcessors();
+        EXECUTOR = Executors.newFixedThreadPool(THREAD_COUNT);
     }
 
-    public static ChanReaderRequest newInstance(Loadable loadable, List<Post> cached, Listener<List<Post>> listener,
-                                                ErrorListener errorListener) {
+    private Loadable loadable;
+    private List<Post> cached;
+    private Post op;
+    private FilterEngine filterEngine;
+    private DatabaseManager databaseManager;
+    private DatabaseSavedReplyManager databaseSavedReplyManager;
+
+    private List<Filter> filters;
+    private long startLoad;
+
+    private ChanReaderRequest(String url, Listener<ChanReaderResponse> listener, ErrorListener errorListener) {
+        super(url, listener, errorListener);
+        filterEngine = FilterEngine.getInstance();
+        databaseManager = Chan.getDatabaseManager();
+        databaseSavedReplyManager = databaseManager.getDatabaseSavedReplyManager();
+    }
+
+    public static ChanReaderRequest newInstance(Loadable loadable, List<Post> cached, Listener<ChanReaderResponse> listener, ErrorListener errorListener) {
         String url;
 
-        if (loadable.isBoardMode()) {
-            url = ChanUrls.getPageUrl(loadable.board, loadable.no);
-        } else if (loadable.isThreadMode()) {
+        if (loadable.isThreadMode()) {
             url = ChanUrls.getThreadUrl(loadable.board, loadable.no);
         } else if (loadable.isCatalogMode()) {
             url = ChanUrls.getCatalogUrl(loadable.board);
@@ -61,6 +88,28 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
         request.loadable = loadable.copy();
         request.cached = new ArrayList<>(cached);
 
+        request.filters = new ArrayList<>();
+        List<Filter> enabledFilters = request.filterEngine.getEnabledFilters();
+        for (int i = 0; i < enabledFilters.size(); i++) {
+            Filter filter = enabledFilters.get(i);
+
+            if (filter.allBoards) {
+                // copy the filter because it will get used on other threads
+                request.filters.add(filter.copy());
+            } else {
+                String[] boardCodes = filter.boardCodes();
+                for (String code : boardCodes) {
+                    if (code.equals(loadable.board)) {
+                        // copy the filter because it will get used on other threads
+                        request.filters.add(filter.copy());
+                        break;
+                    }
+                }
+            }
+        }
+
+        request.startLoad = Time.startTiming();
+
         return request;
     }
 
@@ -70,118 +119,173 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
     }
 
     @Override
-    public List<Post> readJson(JsonReader reader) throws Exception {
-        List<Post> list;
+    public ChanReaderResponse readJson(JsonReader reader) throws Exception {
+        if (LOG_TIMING) {
+            Time.endTiming("Network", startLoad);
+        }
 
-        if (loadable.isBoardMode()) {
-            list = loadBoard(reader);
-        } else if (loadable.isThreadMode()) {
-            list = loadThread(reader);
+        long load = Time.startTiming();
+
+        ProcessingQueue processing = new ProcessingQueue();
+
+        Map<Integer, Post> cachedByNo = new HashMap<>();
+        for (int i = 0; i < cached.size(); i++) {
+            Post cache = cached.get(i);
+            cachedByNo.put(cache.no, cache);
+        }
+
+        if (loadable.isThreadMode()) {
+            loadThread(reader, processing, cachedByNo);
         } else if (loadable.isCatalogMode()) {
-            list = loadCatalog(reader);
+            loadCatalog(reader, processing, cachedByNo);
         } else {
             throw new IllegalArgumentException("Unknown mode");
         }
 
+        if (LOG_TIMING) {
+            Time.endTiming("Load json", load);
+        }
+
+        List<Post> list = parsePosts(processing);
         return processPosts(list);
     }
 
-    private List<Post> processPosts(List<Post> serverList) throws Exception {
-        List<Post> totalList = new ArrayList<>(serverList.size());
+    // Concurrently parses the new posts with an executor
+    private List<Post> parsePosts(ProcessingQueue queue) throws InterruptedException, ExecutionException {
+        long parsePosts = Time.startTiming();
 
+        List<Post> total = new ArrayList<>();
+
+        total.addAll(queue.cached);
+
+        List<Callable<Post>> tasks = new ArrayList<>(queue.toParse.size());
+        for (int i = 0; i < queue.toParse.size(); i++) {
+            Post post = queue.toParse.get(i);
+            tasks.add(new PostParseCallable(filterEngine, filters, databaseSavedReplyManager, post));
+        }
+
+        if (!tasks.isEmpty()) {
+            List<Future<Post>> futures = EXECUTOR.invokeAll(tasks);
+            for (int i = 0; i < futures.size(); i++) {
+                Future<Post> future = futures.get(i);
+                Post parsedPost = future.get();
+                if (parsedPost != null) {
+                    total.add(parsedPost);
+                }
+            }
+
+            if (LOG_TIMING) {
+                Time.endTiming("Parse posts with " + THREAD_COUNT + " threads", parsePosts);
+            }
+        }
+
+        return total;
+    }
+
+    private ChanReaderResponse processPosts(List<Post> serverPosts) throws Exception {
+        ChanReaderResponse response = new ChanReaderResponse();
+        response.posts = new ArrayList<>(serverPosts.size());
+        response.op = op;
+
+        List<Post> cachedPosts = new ArrayList<>();
+        List<Post> newPosts = new ArrayList<>();
         if (cached.size() > 0) {
-            totalList.addAll(cached);
+            long deleteCheck = Time.startTiming();
+            // Add all posts that were parsed before
+            cachedPosts.addAll(cached);
+
+            Map<Integer, Post> cachedPostsByNo = new HashMap<>();
+            for (int i = 0; i < cachedPosts.size(); i++) {
+                Post post = cachedPosts.get(i);
+                cachedPostsByNo.put(post.no, post);
+            }
+
+            Map<Integer, Post> serverPostsByNo = new HashMap<>();
+            for (int i = 0; i < serverPosts.size(); i++) {
+                Post post = serverPosts.get(i);
+                serverPostsByNo.put(post.no, post);
+            }
 
             // If there's a cached post but it's not in the list received from the server, mark it as deleted
             if (loadable.isThreadMode()) {
-                boolean serverHas;
-                for (Post cache : cached) {
-                    serverHas = false;
-                    for (Post b : serverList) {
-                        if (b.no == cache.no) {
-                            serverHas = true;
-                            break;
-                        }
-                    }
-
-                    cache.deleted = !serverHas;
+                for (int i = 0; i < cachedPosts.size(); i++) {
+                    Post cachedPost = cachedPosts.get(i);
+                    cachedPost.deleted.set(!serverPostsByNo.containsKey(cachedPost.no));
                 }
             }
+            if (LOG_TIMING) {
+                Time.endTiming("Delete check", deleteCheck);
+            }
+            long newCheck = Time.startTiming();
 
             // If there's a post in the list from the server, that's not in the cached list, add it.
-            boolean known;
-            for (Post post : serverList) {
-                known = false;
-
-                for (Post cache : cached) {
-                    if (cache.no == post.no) {
-                        known = true;
-                        break;
-                    }
-                }
-
-                // serverPost is not in finalList
-                if (!known) {
-                    totalList.add(post);
+            for (int i = 0; i < serverPosts.size(); i++) {
+                Post serverPost = serverPosts.get(i);
+                if (!cachedPostsByNo.containsKey(serverPost.no)) {
+                    newPosts.add(serverPost);
                 }
             }
-
-            // Sort if it got out of order due to posts disappearing/reappearing
-            /*if (loadable.isThreadMode()) {
-                Collections.sort(totalList, new Comparator<Post>() {
-                    @Override
-                    public int compare(Post lhs, Post rhs) {
-                        return lhs.time == rhs.time ? 0 : (lhs.time < rhs.time ? -1 : 1);
-                    }
-                });
-            }*/
-
+            if (LOG_TIMING) {
+                Time.endTiming("New check", newCheck);
+            }
         } else {
-            totalList.addAll(serverList);
+            newPosts.addAll(serverPosts);
         }
 
-        Set<Integer> invalidatedPosts = new HashSet<>();
-        for (Post post : totalList) {
-            if (!post.deleted) {
-                post.repliesFrom.clear();
+        List<Post> allPosts = new ArrayList<>(cachedPosts.size() + newPosts.size());
+        allPosts.addAll(cachedPosts);
+        allPosts.addAll(newPosts);
 
-                for (Post other : totalList) {
-                    if (other.repliesTo.contains(post.no) && !other.deleted) {
-                        post.repliesFrom.add(other.no);
+        if (loadable.isThreadMode()) {
+            Map<Integer, Post> postsByNo = new HashMap<>();
+            for (int i = 0; i < allPosts.size(); i++) {
+                Post post = allPosts.get(i);
+                postsByNo.put(post.no, post);
+            }
+
+            // Maps post no's to a list of no's that that post received replies from
+            Map<Integer, List<Integer>> replies = new HashMap<>();
+
+            long collectReplies = Time.startTiming();
+            for (int i = 0; i < allPosts.size(); i++) {
+                Post sourcePost = allPosts.get(i);
+
+                for (int replyTo : sourcePost.repliesTo) {
+                    List<Integer> value = replies.get(replyTo);
+                    if (value == null) {
+                        value = new ArrayList<>(3);
+                        replies.put(replyTo, value);
                     }
+                    value.add(sourcePost.no);
                 }
-            } else {
-                post.repliesTo.clear();
+            }
+            if (LOG_TIMING) {
+                Time.endTiming("Collect replies", collectReplies);
+            }
+            long mapReplies = Time.startTiming();
 
-                for (int no : post.repliesFrom) {
-                    invalidatedPosts.add(no);
+            for (Map.Entry<Integer, List<Integer>> entry : replies.entrySet()) {
+                int key = entry.getKey();
+                List<Integer> value = entry.getValue();
+
+                Post subject = postsByNo.get(key);
+                synchronized (subject.repliesFrom) {
+                    subject.repliesFrom.clear();
+                    subject.repliesFrom.addAll(value);
                 }
+            }
 
-                post.repliesFrom.clear();
+            if (LOG_TIMING) {
+                Time.endTiming("Map replies", mapReplies);
             }
         }
 
-        for (int no : invalidatedPosts) {
-            for (Post post : totalList) {
-                if (post.no == no) {
-                    if (!post.finish()) {
-                        throw new IOException("Incorrect data about post received.");
-                    }
-                    break;
-                }
-            }
-        }
+        response.posts.addAll(allPosts);
 
-        for (Post post : totalList) {
-            post.isSavedReply = ChanApplication.getDatabaseManager().isSavedReply(post.board, post.no);
-        }
-
-        return totalList;
+        return response;
     }
 
-    private List<Post> loadThread(JsonReader reader) throws Exception {
-        ArrayList<Post> list = new ArrayList<>();
-
+    private void loadThread(JsonReader reader, ProcessingQueue queue, Map<Integer, Post> cachedByNo) throws Exception {
         reader.beginObject();
         // Page object
         while (reader.hasNext()) {
@@ -191,7 +295,7 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
                 // Thread array
                 while (reader.hasNext()) {
                     // Thread object
-                    list.add(readPostObject(reader));
+                    readPostObject(reader, queue, cachedByNo);
                 }
                 reader.endArray();
             } else {
@@ -199,51 +303,9 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
             }
         }
         reader.endObject();
-
-        return list;
     }
 
-    private List<Post> loadBoard(JsonReader reader) throws Exception {
-        ArrayList<Post> list = new ArrayList<>();
-
-        reader.beginObject(); // Threads array
-
-        if (reader.nextName().equals("threads")) {
-            reader.beginArray();
-
-            while (reader.hasNext()) {
-                reader.beginObject(); // Thread object
-
-                if (reader.nextName().equals("posts")) {
-                    reader.beginArray();
-
-                    list.add(readPostObject(reader));
-
-                    // Only consume one post
-                    while (reader.hasNext())
-                        reader.skipValue();
-
-                    reader.endArray();
-                } else {
-                    reader.skipValue();
-                }
-
-                reader.endObject();
-            }
-
-            reader.endArray();
-        } else {
-            reader.skipValue();
-        }
-
-        reader.endObject();
-
-        return list;
-    }
-
-    private List<Post> loadCatalog(JsonReader reader) throws Exception {
-        ArrayList<Post> list = new ArrayList<>();
-
+    private void loadCatalog(JsonReader reader, ProcessingQueue queue, Map<Integer, Post> cachedByNo) throws Exception {
         reader.beginArray(); // Array of pages
 
         while (reader.hasNext()) {
@@ -254,7 +316,7 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
                     reader.beginArray(); // Threads array
 
                     while (reader.hasNext()) {
-                        list.add(readPostObject(reader));
+                        readPostObject(reader, queue, cachedByNo);
                     }
 
                     reader.endArray();
@@ -267,11 +329,9 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
         }
 
         reader.endArray();
-
-        return list;
     }
 
-    private Post readPostObject(JsonReader reader) throws Exception {
+    private void readPostObject(JsonReader reader, ProcessingQueue queue, Map<Integer, Post> cachedByNo) throws Exception {
         Post post = new Post();
         post.board = loadable.board;
 
@@ -281,12 +341,7 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
 
             switch (key) {
                 case "no":
-                    // Post number
                     post.no = reader.nextInt();
-                /*} else if (key.equals("time")) {
-                    // Time
-                    long time = reader.nextLong();
-                    post.date = new Date(time * 1000);*/
                     break;
                 case "now":
                     post.date = reader.nextString();
@@ -316,7 +371,7 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
                     post.imageHeight = reader.nextInt();
                     break;
                 case "fsize":
-                    post.fileSize = reader.nextInt();
+                    post.fileSize = reader.nextLong();
                     break;
                 case "sub":
                     post.subject = reader.nextString();
@@ -357,31 +412,45 @@ public class ChanReaderRequest extends JsonReaderRequest<List<Post>> {
                 case "spoiler":
                     post.spoiler = reader.nextInt() == 1;
                     break;
+                case "unique_ips":
+                    post.uniqueIps = reader.nextInt();
+                    break;
                 default:
                     // Unknown/ignored key
-                    //                log("Unknown/ignored key: " + key + ".");
                     reader.skipValue();
                     break;
             }
         }
         reader.endObject();
 
-        Post cachedResult = null;
-        for (Post possibleCached : cached) {
-            if (possibleCached.no == post.no) {
-                cachedResult = possibleCached;
-                break;
-            }
+        if (post.resto == 0) {
+            // Update OP fields later on the main thread
+            op = new Post();
+            op.closed = post.closed;
+            op.archived = post.archived;
+            op.sticky = post.sticky;
+            op.replies = post.replies;
+            op.images = post.images;
+            op.uniqueIps = post.uniqueIps;
         }
 
-        if (cachedResult != null) {
-            return cachedResult;
+        Post cached = cachedByNo.get(post.no);
+        if (cached != null) {
+            queue.cached.add(cached);
         } else {
-            if (!post.finish()) {
-                throw new IOException("Incorrect data about post received.");
-            }
-
-            return post;
+            queue.toParse.add(post);
         }
+    }
+
+    public static class ChanReaderResponse {
+        // Op Post that is created new each time.
+        // Used to later copy members like image count to the real op on the main thread.
+        public Post op;
+        public List<Post> posts;
+    }
+
+    private static class ProcessingQueue {
+        public List<Post> cached = new ArrayList<>();
+        public List<Post> toParse = new ArrayList<>();
     }
 }

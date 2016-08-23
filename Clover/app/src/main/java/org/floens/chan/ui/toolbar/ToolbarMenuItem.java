@@ -19,31 +19,35 @@ package org.floens.chan.ui.toolbar;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
-import org.floens.chan.R;
 import org.floens.chan.ui.view.FloatingMenu;
 import org.floens.chan.ui.view.FloatingMenuItem;
 
 import static org.floens.chan.utils.AndroidUtils.dp;
-import static org.floens.chan.utils.AndroidUtils.getAttrDrawable;
+import static org.floens.chan.utils.AndroidUtils.setRoundItemBackground;
 
 public class ToolbarMenuItem implements View.OnClickListener, FloatingMenu.FloatingMenuCallback {
     private ToolbarMenuItemCallback callback;
-    private int id;
+    private Object id;
+    private int order;
     private FloatingMenu subMenu;
 
     private ImageView imageView;
 
-    public ToolbarMenuItem(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, int id, int drawable) {
-        this(context, callback, id, context.getResources().getDrawable(drawable));
+    public ToolbarMenuItem(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, int order, int drawable) {
+        this(context, callback, order, order, context.getResources().getDrawable(drawable));
     }
 
-    public ToolbarMenuItem(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, int id, Drawable drawable) {
+    public ToolbarMenuItem(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, Object id, int order, int drawable) {
+        this(context, callback, id, order, context.getResources().getDrawable(drawable));
+    }
+
+    public ToolbarMenuItem(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, Object id, int order, Drawable drawable) {
         this.id = id;
+        this.order = order;
         this.callback = callback;
 
         if (drawable != null) {
@@ -51,25 +55,28 @@ public class ToolbarMenuItem implements View.OnClickListener, FloatingMenu.Float
             imageView.setOnClickListener(this);
             imageView.setFocusable(true);
             imageView.setScaleType(ImageView.ScaleType.CENTER);
-            imageView.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(56)));
-            int p = dp(16);
-            imageView.setPadding(p, p, p, p);
+            imageView.setLayoutParams(new LinearLayout.LayoutParams(dp(50), dp(56)));
 
             imageView.setImageDrawable(drawable);
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                //noinspection deprecation
-                imageView.setBackgroundDrawable(getAttrDrawable(android.R.attr.selectableItemBackgroundBorderless));
-            } else {
-                //noinspection deprecation
-                imageView.setBackgroundResource(R.drawable.gray_background_selector);
-            }
+            setRoundItemBackground(imageView);
         }
+    }
+
+    public void setImage(Drawable drawable) {
+        imageView.setImageDrawable(drawable);
+    }
+
+    public void setImage(int drawable) {
+        imageView.setImageResource(drawable);
     }
 
     public void setSubMenu(FloatingMenu subMenu) {
         this.subMenu = subMenu;
         subMenu.setCallback(this);
+    }
+
+    public FloatingMenu getSubMenu() {
+        return subMenu;
     }
 
     @Override
@@ -80,8 +87,12 @@ public class ToolbarMenuItem implements View.OnClickListener, FloatingMenu.Float
         callback.onMenuItemClicked(this);
     }
 
-    public int getId() {
+    public Object getId() {
         return id;
+    }
+
+    public int getOrder() {
+        return order;
     }
 
     public ImageView getView() {
@@ -93,9 +104,13 @@ public class ToolbarMenuItem implements View.OnClickListener, FloatingMenu.Float
         callback.onSubMenuItemClicked(this, item);
     }
 
-    public interface ToolbarMenuItemCallback {
-        public void onMenuItemClicked(ToolbarMenuItem item);
+    @Override
+    public void onFloatingMenuDismissed(FloatingMenu menu) {
+    }
 
-        public void onSubMenuItemClicked(ToolbarMenuItem parent, FloatingMenuItem item);
+    public interface ToolbarMenuItemCallback {
+        void onMenuItemClicked(ToolbarMenuItem item);
+
+        void onSubMenuItemClicked(ToolbarMenuItem parent, FloatingMenuItem item);
     }
 }

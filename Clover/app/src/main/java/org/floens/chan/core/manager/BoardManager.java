@@ -20,8 +20,9 @@ package org.floens.chan.core.manager;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 
-import org.floens.chan.ChanApplication;
+import org.floens.chan.Chan;
 import org.floens.chan.chan.ChanUrls;
+import org.floens.chan.core.database.DatabaseManager;
 import org.floens.chan.core.model.Board;
 import org.floens.chan.core.net.BoardsRequest;
 import org.floens.chan.utils.Logger;
@@ -33,168 +34,162 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class BoardManager {
+import de.greenrobot.event.EventBus;
+
+public class BoardManager implements Response.Listener<List<Board>>, Response.ErrorListener {
     private static final String TAG = "BoardManager";
-    private static final Comparator<Board> savedOrder = new Comparator<Board>() {
+
+    private static final Comparator<Board> ORDER_SORT = new Comparator<Board>() {
         @Override
         public int compare(Board lhs, Board rhs) {
-            return lhs.order < rhs.order ? -1 : 1;
+            return lhs.order - rhs.order;
         }
     };
 
-    private List<Board> allBoards;
-    private Map<String, Board> allBoardsByValue = new HashMap<>();
+    private static final Comparator<Board> NAME_SORT = new Comparator<Board>() {
+        @Override
+        public int compare(Board lhs, Board rhs) {
+            return lhs.name.compareTo(rhs.name);
+        }
+    };
 
-    private List<BoardChangeListener> listeners = new ArrayList<>();
+    private final DatabaseManager databaseManager;
 
-    public BoardManager() {
-        loadBoards();
-        loadFromServer();
+    private final List<Board> boards;
+    private final List<Board> savedBoards = new ArrayList<>();
+    private final Map<String, Board> boardsByCode = new HashMap<>();
+
+    public BoardManager(DatabaseManager databaseManager) {
+        this.databaseManager = databaseManager;
+        boards = databaseManager.getBoards();
+
+        if (boards.isEmpty()) {
+            Logger.d(TAG, "Loading default boards");
+            boards.addAll(getDefaultBoards());
+            saveDatabase();
+            update(true);
+        } else {
+            update(false);
+        }
+
+        Chan.getVolleyRequestQueue().add(new BoardsRequest(ChanUrls.getBoardsUrl(), this, this));
     }
 
-    public Board getBoardByValue(String value) {
-        return allBoardsByValue.get(value);
+    @Override
+    public void onResponse(List<Board> response) {
+        List<Board> boardsToAddWs = new ArrayList<>();
+        List<Board> boardsToAddNws = new ArrayList<>();
+
+        for (int i = 0; i < response.size(); i++) {
+            Board serverBoard = response.get(i);
+
+            Board existing = getBoardByCode(serverBoard.code);
+            if (existing != null) {
+                serverBoard.id = existing.id;
+                serverBoard.saved = existing.saved;
+                serverBoard.order = existing.order;
+                boards.set(boards.indexOf(existing), serverBoard);
+            } else {
+                serverBoard.saved = true;
+                if (serverBoard.workSafe) {
+                    boardsToAddWs.add(serverBoard);
+                } else {
+                    boardsToAddNws.add(serverBoard);
+                }
+            }
+        }
+
+        Collections.sort(boardsToAddWs, NAME_SORT);
+        Collections.sort(boardsToAddNws, NAME_SORT);
+
+        for (int i = 0; i < boardsToAddWs.size(); i++) {
+            Board board = boardsToAddWs.get(i);
+            board.order = boards.size();
+            boards.add(board);
+        }
+
+        for (int i = 0; i < boardsToAddNws.size(); i++) {
+            Board board = boardsToAddNws.get(i);
+            board.order = boards.size();
+            boards.add(board);
+        }
+
+        saveDatabase();
+        update(true);
+    }
+
+    @Override
+    public void onErrorResponse(VolleyError error) {
+        Logger.e(TAG, "Failed to get boards from server");
+    }
+
+    // Thread-safe
+    public boolean getBoardExists(String code) {
+        return getBoardByCode(code) != null;
+    }
+
+    // Thread-safe
+    public Board getBoardByCode(String code) {
+        synchronized (boardsByCode) {
+            return boardsByCode.get(code);
+        }
     }
 
     public List<Board> getAllBoards() {
-        return allBoards;
+        return boards;
     }
 
     public List<Board> getSavedBoards() {
-        List<Board> saved = new ArrayList<>(allBoards.size());
-
-        for (Board b : allBoards) {
-            if (b.saved)
-                saved.add(b);
-        }
-
-        Collections.sort(saved, savedOrder);
-
-        return saved;
+        return savedBoards;
     }
 
-    public boolean getBoardExists(String board) {
-        for (Board e : getAllBoards()) {
-            if (e.value.equals(board)) {
-                return true;
+    public void flushOrderAndSaved() {
+        saveDatabase();
+        update(true);
+    }
+
+    private void update(boolean notify) {
+        savedBoards.clear();
+        savedBoards.addAll(filterSaved(boards));
+        synchronized (boardsByCode) {
+            boardsByCode.clear();
+            for (Board board : boards) {
+                boardsByCode.put(board.code, board);
             }
         }
-
-        return false;
-    }
-
-    public void updateSavedBoards() {
-        ChanApplication.getDatabaseManager().updateBoards(allBoards);
-
-        notifyChanged();
-    }
-
-    public void addListener(BoardChangeListener listener) {
-        listeners.add(listener);
-    }
-
-    public void removeListener(BoardChangeListener listener) {
-        listeners.remove(listener);
-    }
-
-    private void updateByValueMap() {
-        allBoardsByValue.clear();
-        for (Board test : allBoards) {
-            allBoardsByValue.put(test.value, test);
+        if (notify) {
+            EventBus.getDefault().post(new BoardsChangedMessage());
         }
     }
 
-    private void notifyChanged() {
-        for (BoardChangeListener l : listeners) {
-            l.onBoardsChanged();
-        }
-    }
-
-    private void storeBoards() {
-        Logger.d(TAG, "Storing boards in database");
-
-        for (Board test : allBoards) {
-            if (test.saved) {
-                Logger.d(TAG, "Board with value " + test.value + " saved");
-            }
-        }
-        updateByValueMap();
-
-        ChanApplication.getDatabaseManager().setBoards(allBoards);
-        notifyChanged();
-    }
-
-    private void loadBoards() {
-        allBoards = ChanApplication.getDatabaseManager().getBoards();
-        if (allBoards.size() == 0) {
-            Logger.d(TAG, "Loading default boards");
-            allBoards = getDefaultBoards();
-            storeBoards();
-        }
-        updateByValueMap();
-    }
-
-    private void setBoardsFromServer(List<Board> serverList) {
-        boolean has;
-        for (Board serverBoard : serverList) {
-            has = false;
-            for (int i = 0; i < allBoards.size(); i++) {
-                if (allBoards.get(i).value.equals(serverBoard.value)) {
-                    Logger.d(TAG, "Replaced board " + serverBoard.value + " with the server one");
-
-                    Board old = allBoards.get(i);
-                    serverBoard.id = old.id;
-                    serverBoard.saved = old.saved;
-                    serverBoard.order = old.order;
-                    allBoards.set(i, serverBoard);
-
-                    has = true;
-                    break;
-                }
-            }
-
-            if (!has) {
-                Logger.d(TAG, "Adding unknown board: " + serverBoard.value);
-
-                if (serverBoard.workSafe) {
-                    serverBoard.saved = true;
-                }
-
-                allBoards.add(serverBoard);
-            }
-        }
-
-        storeBoards();
-    }
-
-    private void loadFromServer() {
-        ChanApplication.getVolleyRequestQueue().add(
-                new BoardsRequest(ChanUrls.getBoardsUrl(), new Response.Listener<List<Board>>() {
-                    @Override
-                    public void onResponse(List<Board> data) {
-                        Logger.i(TAG, "Got boards from server");
-                        setBoardsFromServer(data);
-                    }
-                }, new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Logger.e(TAG, "Failed to get boards from server");
-                    }
-                })
-        );
+    private void saveDatabase() {
+        databaseManager.setBoards(boards);
     }
 
     private List<Board> getDefaultBoards() {
         List<Board> list = new ArrayList<>();
         list.add(new Board("Technology", "g", true, true));
-        list.add(new Board("Video Games", "v", true, true));
-        list.add(new Board("Anime & Manga", "a", true, true));
-        list.add(new Board("Comics & Cartoons", "co", true, true));
-        list.add(new Board("International", "int", true, true));
+        list.add(new Board("Food & Cooking", "ck", true, true));
+        list.add(new Board("Do It Yourself", "diy", true, true));
+        list.add(new Board("Animals & Nature", "an", true, true));
+
+        Collections.shuffle(list);
+
         return list;
     }
 
-    public interface BoardChangeListener {
-        public void onBoardsChanged();
+    private List<Board> filterSaved(List<Board> all) {
+        List<Board> saved = new ArrayList<>(all.size());
+        for (int i = 0; i < all.size(); i++) {
+            Board board = all.get(i);
+            if (board.saved) {
+                saved.add(board);
+            }
+        }
+        Collections.sort(saved, ORDER_SORT);
+        return saved;
+    }
+
+    public static class BoardsChangedMessage {
     }
 }

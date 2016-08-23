@@ -1,3 +1,20 @@
+/*
+ * Clover - 4chan browser https://github.com/Floens/Clover/
+ * Copyright (C) 2014  Floens
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.floens.chan.ui.controller;
 
 import android.content.Context;
@@ -22,6 +39,7 @@ public class WatchSettingsController extends SettingsController implements Compo
     private SettingView backgroundTimeout;
     private SettingView notifyMode;
     private SettingView soundMode;
+    private SettingView peekMode;
     private SettingView ledMode;
 
     public WatchSettingsController(Context context) {
@@ -34,9 +52,9 @@ public class WatchSettingsController extends SettingsController implements Compo
 
         boolean enabled = ChanSettings.watchEnabled.get();
 
-        navigationItem.title = string(R.string.settings_screen_watch);
+        navigationItem.setTitle(R.string.settings_screen_watch);
 
-        view = inflateRes(R.layout.settings_watch);
+        view = inflateRes(R.layout.controller_watch);
         content = (LinearLayout) view.findViewById(R.id.scrollview_content);
         crossfadeView = (CrossfadeView) view.findViewById(R.id.crossfade);
 
@@ -55,6 +73,7 @@ public class WatchSettingsController extends SettingsController implements Compo
             setSettingViewVisibility(backgroundTimeout, false, false);
             setSettingViewVisibility(notifyMode, false, false);
             setSettingViewVisibility(soundMode, false, false);
+            setSettingViewVisibility(peekMode, false, false);
             setSettingViewVisibility(ledMode, false, false);
         }
     }
@@ -62,7 +81,9 @@ public class WatchSettingsController extends SettingsController implements Compo
     @Override
     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         ChanSettings.watchEnabled.set(isChecked);
-        ((WatchSettingControllerListener) previousSiblingController).onWatchEnabledChanged(isChecked);
+        if (previousSiblingController instanceof WatchSettingControllerListener) {
+            ((WatchSettingControllerListener) previousSiblingController).onWatchEnabledChanged(isChecked);
+        }
         crossfadeView.toggle(isChecked, true);
     }
 
@@ -75,31 +96,47 @@ public class WatchSettingsController extends SettingsController implements Compo
             setSettingViewVisibility(backgroundTimeout, enabled, true);
             setSettingViewVisibility(notifyMode, enabled, true);
             setSettingViewVisibility(soundMode, enabled, true);
+            setSettingViewVisibility(peekMode, enabled, true);
             setSettingViewVisibility(ledMode, enabled, true);
         }
     }
 
     private void populatePreferences() {
-        SettingsGroup settings = new SettingsGroup(string(R.string.settings_group_watch));
+        SettingsGroup settings = new SettingsGroup(R.string.settings_group_watch);
 
-        settings.add(new BooleanSettingView(this, ChanSettings.watchCountdown, string(R.string.setting_watch_countdown), string(R.string.setting_watch_countdown_description)));
-        enableBackground = settings.add(new BooleanSettingView(this, ChanSettings.watchBackground, string(R.string.setting_watch_enable_background), string(R.string.setting_watch_enable_background_description)));
+//        settings.add(new BooleanSettingView(this, ChanSettings.watchCountdown, string(R.string.setting_watch_countdown), string(R.string.setting_watch_countdown_description)));
+        enableBackground = settings.add(new BooleanSettingView(this, ChanSettings.watchBackground, R.string.setting_watch_enable_background, R.string.setting_watch_enable_background_description));
 
-        int[] timeouts = new int[]{1, 2, 3, 5, 10, 30, 60};
+        int[] timeouts = new int[]{
+                10 * 60 * 1000,
+                15 * 60 * 1000,
+                30 * 60 * 1000,
+                45 * 60 * 1000,
+                60 * 60 * 1000,
+                2 * 60 * 60 * 1000
+        };
         ListSettingView.Item[] timeoutsItems = new ListSettingView.Item[timeouts.length];
         for (int i = 0; i < timeouts.length; i++) {
-            String name = context.getResources().getQuantityString(R.plurals.minutes, timeouts[i], timeouts[i]);
-            timeoutsItems[i] = new ListSettingView.Item(name, String.valueOf(timeouts[i]));
+            int value = timeouts[i] / 1000 / 60;
+            String name = context.getResources().getQuantityString(R.plurals.minutes, value, value);
+            timeoutsItems[i] = new ListSettingView.Item<>(name, timeouts[i]);
         }
-        backgroundTimeout = settings.add(new ListSettingView(this, ChanSettings.watchBackgroundTimeout, string(R.string.setting_watch_background_timeout), timeoutsItems));
+        backgroundTimeout = settings.add(new ListSettingView<Integer>(this, ChanSettings.watchBackgroundInterval, R.string.setting_watch_background_timeout, timeoutsItems) {
+            @Override
+            public String getBottomDescription() {
+                return getString(R.string.setting_watch_background_timeout_description) + "\n\n" + items.get(selected).name;
+            }
+        });
 
-        notifyMode = settings.add(new ListSettingView(this, ChanSettings.watchNotifyMode, string(R.string.setting_watch_notify_mode),
+        notifyMode = settings.add(new ListSettingView<>(this, ChanSettings.watchNotifyMode, R.string.setting_watch_notify_mode,
                 context.getResources().getStringArray(R.array.setting_watch_notify_modes), new String[]{"all", "quotes"}));
 
-        soundMode = settings.add(new ListSettingView(this, ChanSettings.watchSound, string(R.string.setting_watch_sound),
+        soundMode = settings.add(new ListSettingView<>(this, ChanSettings.watchSound, R.string.setting_watch_sound,
                 context.getResources().getStringArray(R.array.setting_watch_sounds), new String[]{"all", "quotes"}));
 
-        ledMode = settings.add(new ListSettingView(this, ChanSettings.watchLed, string(R.string.setting_watch_led),
+        peekMode = settings.add(new BooleanSettingView(this, ChanSettings.watchPeek, R.string.setting_watch_peek, R.string.setting_watch_peek_description));
+
+        ledMode = settings.add(new ListSettingView<>(this, ChanSettings.watchLed, R.string.setting_watch_led,
                 context.getResources().getStringArray(R.array.setting_watch_leds),
                 new String[]{"-1", "ffffffff", "ffff0000", "ffffff00", "ff00ff00", "ff00ffff", "ff0000ff", "ffff00ff"}));
 
@@ -107,6 +144,6 @@ public class WatchSettingsController extends SettingsController implements Compo
     }
 
     public interface WatchSettingControllerListener {
-        public void onWatchEnabledChanged(boolean enabled);
+        void onWatchEnabledChanged(boolean enabled);
     }
 }

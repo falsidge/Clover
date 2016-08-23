@@ -19,25 +19,36 @@ package org.floens.chan.ui.toolbar;
 
 import android.content.Context;
 import android.view.View;
-import android.widget.LinearLayout;
 
 import org.floens.chan.ui.view.FloatingMenu;
 import org.floens.chan.ui.view.FloatingMenuItem;
 
 import java.util.List;
 
+import static org.floens.chan.utils.AndroidUtils.getString;
+
 public class NavigationItem {
     public String title = "";
+    public String subtitle = "";
     public ToolbarMenu menu;
     public boolean hasBack = true;
-    public LinearLayout view;
     public FloatingMenu middleMenu;
     public View rightView;
+    public boolean hasDrawer = false;
+    public boolean handlesToolbarInset = false;
+    public boolean swipeable = true;
+
+    boolean search = false;
+    String searchText;
 
     public ToolbarMenuItem createOverflow(Context context, ToolbarMenuItem.ToolbarMenuItemCallback callback, List<FloatingMenuItem> items) {
         ToolbarMenuItem overflow = menu.createOverflow(callback);
         FloatingMenu overflowMenu = new FloatingMenu(context, overflow.getView(), items);
         overflow.setSubMenu(overflowMenu);
         return overflow;
+    }
+
+    public void setTitle(int resId) {
+        title = getString(resId);
     }
 }

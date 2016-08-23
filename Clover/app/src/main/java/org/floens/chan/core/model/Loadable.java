@@ -17,8 +17,8 @@
  */
 package org.floens.chan.core.model;
 
-import android.content.Context;
-import android.os.Bundle;
+import android.os.Parcel;
+import android.text.TextUtils;
 
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
@@ -29,18 +29,18 @@ import com.j256.ormlite.table.DatabaseTable;
 @DatabaseTable
 public class Loadable {
     @DatabaseField(generatedId = true)
-    private int id;
+    public int id;
 
     @DatabaseField
     public int mode = Mode.INVALID;
 
-    @DatabaseField
-    public String board = "";
+    @DatabaseField(canBeNull = false, index = true)
+    public String board;
 
-    @DatabaseField
+    @DatabaseField(index = true)
     public int no = -1;
 
-    @DatabaseField
+    @DatabaseField(canBeNull = false)
     public String title = "";
 
     @DatabaseField
@@ -49,49 +49,80 @@ public class Loadable {
     @DatabaseField
     public int listViewTop;
 
+    @DatabaseField
     public int lastViewed = -1;
+
+    @DatabaseField
+    public int lastLoaded = -1;
+
+    public int markedNo = -1;
+
+    // when the title, listViewTop, listViewIndex or lastViewed were changed
+    public boolean dirty = false;
 
     /**
      * Constructs an empty loadable. The mode is INVALID.
      */
-    public Loadable() {
+    private Loadable() {
     }
 
-    /**
-     * Quick constructor for a board loadable.
-     *
-     * @param board
-     */
-    public Loadable(String board) {
-        mode = Mode.BOARD;
-        this.board = board;
-        no = 0;
+    public static Loadable emptyLoadable() {
+        return new Loadable();
     }
 
-    /**
-     * Quick constructor for a thread loadable.
-     *
-     * @param board
-     * @param no
-     */
-    public Loadable(String board, int no) {
-        mode = Mode.THREAD;
-        this.board = board;
-        this.no = no;
+    public static Loadable forCatalog(String board) {
+        Loadable loadable = new Loadable();
+        loadable.mode = Mode.CATALOG;
+        loadable.board = board;
+        return loadable;
     }
 
-    /**
-     * Quick constructor for a thread loadable with an title.
-     *
-     * @param board
-     * @param no
-     * @param title
-     */
-    public Loadable(String board, int no, String title) {
-        mode = Mode.THREAD;
-        this.board = board;
-        this.no = no;
-        this.title = title;
+    public static Loadable forThread(String board, int no) {
+        return Loadable.forThread(board, no, "");
+    }
+
+    public static Loadable forThread(String board, int no, String title) {
+        Loadable loadable = new Loadable();
+        loadable.mode = Mode.THREAD;
+        loadable.board = board;
+        loadable.no = no;
+        loadable.title = title;
+        return loadable;
+    }
+
+    public void setTitle(String title) {
+        if (!TextUtils.equals(this.title, title)) {
+            this.title = title;
+            dirty = true;
+        }
+    }
+
+    public void setLastViewed(int lastViewed) {
+        if (this.lastViewed != lastViewed) {
+            this.lastViewed = lastViewed;
+            dirty = true;
+        }
+    }
+
+    public void setLastLoaded(int lastLoaded) {
+        if (this.lastLoaded != lastLoaded) {
+            this.lastLoaded = lastLoaded;
+            dirty = true;
+        }
+    }
+
+    public void setListViewTop(int listViewTop) {
+        if (this.listViewTop != listViewTop) {
+            this.listViewTop = listViewTop;
+            dirty = true;
+        }
+    }
+
+    public void setListViewIndex(int listViewIndex) {
+        if (this.listViewIndex != listViewIndex) {
+            this.listViewIndex = listViewIndex;
+            dirty = true;
+        }
     }
 
     /**
@@ -104,11 +135,51 @@ public class Loadable {
 
         Loadable other = (Loadable) object;
 
-        return mode == other.mode && board.equals(other.board) && no == other.no;
+        if (mode == other.mode) {
+            switch (mode) {
+                case Mode.INVALID:
+                    return true;
+                case Mode.CATALOG:
+                case Mode.BOARD:
+                    return board.equals(other.board);
+                case Mode.THREAD:
+                    return board.equals(other.board) && no == other.no;
+                default:
+                    throw new IllegalArgumentException();
+            }
+        } else {
+            return false;
+        }
     }
 
-    public boolean isBoardMode() {
-        return mode == Mode.BOARD;
+    @Override
+    public int hashCode() {
+        int result = mode;
+
+        if (mode == Mode.THREAD || mode == Mode.CATALOG || mode == Mode.BOARD) {
+            result = 31 * result + (board != null ? board.hashCode() : 0);
+        }
+        if (mode == Mode.THREAD) {
+            result = 31 * result + no;
+        }
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "Loadable{" +
+                "id=" + id +
+                ", mode=" + mode +
+                ", board='" + board + '\'' +
+                ", no=" + no +
+                ", title='" + title + '\'' +
+                ", listViewIndex=" + listViewIndex +
+                ", listViewTop=" + listViewTop +
+                ", lastViewed=" + lastViewed +
+                ", lastLoaded=" + lastLoaded +
+                ", markedNo=" + markedNo +
+                ", dirty=" + dirty +
+                '}';
     }
 
     public boolean isThreadMode() {
@@ -119,44 +190,27 @@ public class Loadable {
         return mode == Mode.CATALOG;
     }
 
-    public void readFromBundle(Context context, Bundle bundle) {
-        String p = context.getPackageName();
-        mode = bundle.getInt(p + ".mode", Mode.INVALID);
-        board = bundle.getString(p + ".board", "");
-        no = bundle.getInt(p + ".no", -1);
-        title = bundle.getString(p + ".subject", "");
-        listViewIndex = bundle.getInt(p + ".listViewIndex");
-        listViewTop = bundle.getInt(p + ".listViewTop");
+    public static Loadable readFromParcel(Parcel parcel) {
+        Loadable loadable = new Loadable();
+        /*loadable.id = */
+        parcel.readInt();
+        loadable.mode = parcel.readInt();
+        loadable.board = parcel.readString();
+        loadable.no = parcel.readInt();
+        loadable.title = parcel.readString();
+        loadable.listViewIndex = parcel.readInt();
+        loadable.listViewTop = parcel.readInt();
+        return loadable;
     }
 
-    public void writeToBundle(Context context, Bundle bundle) {
-        String p = context.getPackageName();
-        bundle.putInt(p + ".mode", mode);
-        bundle.putString(p + ".board", board);
-        bundle.putInt(p + ".no", no);
-        bundle.putString(p + ".subject", title);
-        bundle.putInt(p + ".listViewIndex", listViewIndex);
-        bundle.putInt(p + ".listViewTop", listViewTop);
-    }
-
-    public void readFromBundle(Context context, String tag, Bundle bundle) {
-        String p = context.getPackageName();
-        mode = bundle.getInt(p + "." + tag + ".mode", Mode.INVALID);
-        board = bundle.getString(p + "." + tag + ".board", "");
-        no = bundle.getInt(p + "." + tag + ".no", -1);
-        title = bundle.getString(p + "." + tag + ".subject", "");
-        listViewIndex = bundle.getInt(p + "." + tag + ".listViewIndex");
-        listViewTop = bundle.getInt(p + "." + tag + ".listViewTop");
-    }
-
-    public void writeToBundle(Context context, String tag, Bundle bundle) {
-        String p = context.getPackageName();
-        bundle.putInt(p + "." + tag + ".mode", mode);
-        bundle.putString(p + "." + tag + ".board", board);
-        bundle.putInt(p + "." + tag + ".no", no);
-        bundle.putString(p + "." + tag + ".subject", title);
-        bundle.putInt(p + "." + tag + ".listViewIndex", listViewIndex);
-        bundle.putInt(p + "." + tag + ".listViewTop", listViewTop);
+    public void writeToParcel(Parcel parcel) {
+        parcel.writeInt(id);
+        parcel.writeInt(mode);
+        parcel.writeString(board);
+        parcel.writeInt(no);
+        parcel.writeString(title);
+        parcel.writeInt(listViewIndex);
+        parcel.writeInt(listViewTop);
     }
 
     public Loadable copy() {
@@ -168,25 +222,15 @@ public class Loadable {
         copy.listViewIndex = listViewIndex;
         copy.listViewTop = listViewTop;
         copy.lastViewed = lastViewed;
+        copy.lastLoaded = lastLoaded;
 
         return copy;
-    }
-
-    public void generateTitle(Post post) {
-        title = Post.generateTitle(post);
-    }
-
-    public void generateTitle() {
-        if (mode == Mode.CATALOG) {
-            title = "/" + board + "/";
-        } else {
-            title = "/" + board + "/" + no;
-        }
     }
 
     public static class Mode {
         public static final int INVALID = -1;
         public static final int THREAD = 0;
+        @Deprecated
         public static final int BOARD = 1;
         public static final int CATALOG = 2;
     }

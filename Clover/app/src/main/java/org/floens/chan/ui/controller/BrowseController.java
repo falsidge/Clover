@@ -18,19 +18,26 @@
 package org.floens.chan.ui.controller;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.BaseAdapter;
 import android.widget.TextView;
 
-import org.floens.chan.ChanApplication;
+import org.floens.chan.Chan;
 import org.floens.chan.R;
 import org.floens.chan.chan.ChanUrls;
+import org.floens.chan.core.database.DatabaseManager;
 import org.floens.chan.core.manager.BoardManager;
 import org.floens.chan.core.model.Board;
 import org.floens.chan.core.model.Loadable;
+import org.floens.chan.core.model.Pin;
+import org.floens.chan.core.presenter.ThreadPresenter;
+import org.floens.chan.core.settings.ChanSettings;
+import org.floens.chan.ui.adapter.PostsFilter;
 import org.floens.chan.ui.layout.ThreadLayout;
 import org.floens.chan.ui.toolbar.ToolbarMenu;
 import org.floens.chan.ui.toolbar.ToolbarMenuItem;
@@ -41,81 +48,163 @@ import org.floens.chan.utils.AndroidUtils;
 import java.util.ArrayList;
 import java.util.List;
 
-public class BrowseController extends ThreadController implements ToolbarMenuItem.ToolbarMenuItemCallback, ThreadLayout.ThreadLayoutCallback, FloatingMenu.FloatingMenuCallback, BoardManager.BoardChangeListener {
-    private static final int REFRESH_ID = 1;
-    private static final int POST_ID = 2;
-    private static final int SEARCH_ID = 101;
-    private static final int SHARE_ID = 102;
-    private static final int SETTINGS_ID = 103;
+import static org.floens.chan.utils.AndroidUtils.getString;
 
+public class BrowseController extends ThreadController implements ToolbarMenuItem.ToolbarMenuItemCallback, ThreadLayout.ThreadLayoutCallback, FloatingMenu.FloatingMenuCallback {
+    private static final int SEARCH_ID = 1;
+    private static final int REFRESH_ID = 2;
+    private static final int REPLY_ID = 101;
+    private static final int SHARE_ID = 103;
+    private static final int VIEW_MODE_ID = 104;
+    private static final int ORDER_ID = 105;
+    private static final int OPEN_BROWSER_ID = 106;
+
+    private final DatabaseManager databaseManager;
+
+    private ChanSettings.PostViewMode postViewMode;
+    private PostsFilter.Order order;
     private List<FloatingMenuItem> boardItems;
+
+    private FloatingMenuItem viewModeMenuItem;
+    private ToolbarMenuItem search;
+    private ToolbarMenuItem refresh;
+    private ToolbarMenuItem overflow;
 
     public BrowseController(Context context) {
         super(context);
+        databaseManager = Chan.getDatabaseManager();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        ChanApplication.getBoardManager().addListener(this);
+        postViewMode = ChanSettings.boardViewMode.get();
+        order = PostsFilter.Order.find(ChanSettings.boardOrder.get());
+        threadLayout.setPostViewMode(postViewMode);
+        threadLayout.getPresenter().setOrder(order);
 
+        navigationItem.hasDrawer = true;
         navigationItem.middleMenu = new FloatingMenu(context);
         navigationItem.middleMenu.setCallback(this);
         loadBoards();
 
-        navigationItem.title = "Hello world";
         ToolbarMenu menu = new ToolbarMenu(context);
         navigationItem.menu = menu;
         navigationItem.hasBack = false;
 
-        menu.addItem(new ToolbarMenuItem(context, this, REFRESH_ID, R.drawable.ic_action_refresh));
-        menu.addItem(new ToolbarMenuItem(context, this, POST_ID, R.drawable.ic_action_write));
+        search = menu.addItem(new ToolbarMenuItem(context, this, SEARCH_ID, R.drawable.ic_search_white_24dp));
+        refresh = menu.addItem(new ToolbarMenuItem(context, this, REFRESH_ID, R.drawable.ic_refresh_white_24dp));
 
-        ToolbarMenuItem overflow = menu.createOverflow(this);
+        overflow = menu.createOverflow(this);
 
         List<FloatingMenuItem> items = new ArrayList<>();
-        items.add(new FloatingMenuItem(SEARCH_ID, context.getString(R.string.action_search)));
-        items.add(new FloatingMenuItem(SHARE_ID, context.getString(R.string.action_share)));
-        items.add(new FloatingMenuItem(SETTINGS_ID, context.getString(R.string.settings_screen)));
+        if (!ChanSettings.enableReplyFab.get()) {
+            items.add(new FloatingMenuItem(REPLY_ID, R.string.action_reply));
+        }
+        items.add(new FloatingMenuItem(SHARE_ID, R.string.action_share));
+        viewModeMenuItem = new FloatingMenuItem(VIEW_MODE_ID, postViewMode == ChanSettings.PostViewMode.LIST ?
+                R.string.action_switch_catalog : R.string.action_switch_board);
+        items.add(viewModeMenuItem);
+        items.add(new FloatingMenuItem(ORDER_ID, R.string.action_order));
+        items.add(new FloatingMenuItem(OPEN_BROWSER_ID, R.string.action_open_browser));
 
         overflow.setSubMenu(new FloatingMenu(context, overflow.getView(), items));
-
-        loadBoard(ChanApplication.getBoardManager().getSavedBoards().get(0));
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-
-        ChanApplication.getBoardManager().removeListener(this);
     }
 
     @Override
     public void onMenuItemClicked(ToolbarMenuItem item) {
-        switch (item.getId()) {
+        switch ((Integer) item.getId()) {
+            case SEARCH_ID:
+                ((ToolbarNavigationController) navigationController).showSearch();
+                break;
             case REFRESH_ID:
                 threadLayout.getPresenter().requestData();
-                break;
-            case POST_ID:
-                // TODO
+                refresh.getView().setRotation(0f);
+                refresh.getView().animate().rotation(360f).setDuration(500).setInterpolator(new DecelerateInterpolator(2f));
                 break;
         }
     }
 
     @Override
     public void onSubMenuItemClicked(ToolbarMenuItem parent, FloatingMenuItem item) {
-        switch ((Integer) item.getId()) {
-            case SEARCH_ID:
-                // TODO
+        Integer id = (Integer) item.getId();
+        switch (id) {
+            case REPLY_ID:
+                threadLayout.openReply(true);
                 break;
             case SHARE_ID:
+            case OPEN_BROWSER_ID:
                 String link = ChanUrls.getCatalogUrlDesktop(threadLayout.getPresenter().getLoadable().board);
-                AndroidUtils.shareLink(link);
+
+                if (id == SHARE_ID) {
+                    AndroidUtils.shareLink(link);
+                } else {
+                    AndroidUtils.openLinkInBrowser((Activity) context, link);
+                }
+
                 break;
-            case SETTINGS_ID:
-                MainSettingsController mainSettingsController = new MainSettingsController(context);
-                navigationController.pushController(mainSettingsController);
+            case VIEW_MODE_ID:
+                if (postViewMode == ChanSettings.PostViewMode.LIST) {
+                    postViewMode = ChanSettings.PostViewMode.CARD;
+                } else {
+                    postViewMode = ChanSettings.PostViewMode.LIST;
+                }
+
+                ChanSettings.boardViewMode.set(postViewMode);
+
+                viewModeMenuItem.setText(context.getString(
+                        postViewMode == ChanSettings.PostViewMode.LIST ? R.string.action_switch_catalog : R.string.action_switch_board));
+
+                threadLayout.setPostViewMode(postViewMode);
+
+                break;
+            case ORDER_ID:
+                List<FloatingMenuItem> items = new ArrayList<>();
+                for (PostsFilter.Order order : PostsFilter.Order.values()) {
+                    int nameId = 0;
+                    switch (order) {
+                        case BUMP:
+                            nameId = R.string.order_bump;
+                            break;
+                        case REPLY:
+                            nameId = R.string.order_reply;
+                            break;
+                        case IMAGE:
+                            nameId = R.string.order_image;
+                            break;
+                        case NEWEST:
+                            nameId = R.string.order_newest;
+                            break;
+                        case OLDEST:
+                            nameId = R.string.order_oldest;
+                            break;
+                    }
+
+                    String name = getString(nameId);
+                    if (order == this.order) {
+                        name = "\u2713 " + name; // Checkmark
+                    }
+
+                    items.add(new FloatingMenuItem(order, name));
+                }
+
+                FloatingMenu menu = new FloatingMenu(context, overflow.getView(), items);
+                menu.setCallback(new FloatingMenu.FloatingMenuCallback() {
+                    @Override
+                    public void onFloatingMenuItemClicked(FloatingMenu menu, FloatingMenuItem item) {
+                        PostsFilter.Order order = (PostsFilter.Order) item.getId();
+                        ChanSettings.boardOrder.set(order.name);
+                        BrowseController.this.order = order;
+                        threadLayout.getPresenter().setOrder(order);
+                    }
+
+                    @Override
+                    public void onFloatingMenuDismissed(FloatingMenu menu) {
+                    }
+                });
+                menu.show();
+
                 break;
         }
     }
@@ -125,44 +214,112 @@ public class BrowseController extends ThreadController implements ToolbarMenuIte
         if (menu == navigationItem.middleMenu) {
             if (item instanceof FloatingMenuItemBoard) {
                 loadBoard(((FloatingMenuItemBoard) item).board);
-                navigationController.toolbar.updateNavigation();
             } else {
-                // TODO start board editor
+                BoardEditController boardEditController = new BoardEditController(context);
+                if (doubleNavigationController != null) {
+                    doubleNavigationController.pushController(boardEditController);
+                } else {
+                    navigationController.pushController(boardEditController);
+                }
+                menu.dismiss();
             }
         }
     }
 
     @Override
-    public void openThread(Loadable threadLoadable) {
-        ViewThreadController viewThreadController = new ViewThreadController(context);
-        viewThreadController.setLoadable(threadLoadable);
-        navigationController.pushController(viewThreadController);
+    public void onFloatingMenuDismissed(FloatingMenu menu) {
     }
 
     @Override
-    public void onBoardsChanged() {
+    public void openPin(Pin pin) {
+        showThread(pin.loadable);
+    }
+
+    @Override
+    public void showThread(Loadable threadLoadable) {
+        showThread(threadLoadable, true);
+    }
+
+    // Creates or updates the target ThreadViewController
+    // This controller can be in various places depending on the layout
+    // We dynamically search for it
+    public void showThread(Loadable threadLoadable, boolean animated) {
+        // The target ThreadViewController is in a split nav
+        // (BrowseController -> ToolbarNavigationController -> SplitNavigationController)
+        SplitNavigationController splitNav = null;
+
+        // The target ThreadViewController is in a slide nav
+        // (BrowseController -> SlideController -> ToolbarNavigationController)
+        ThreadSlideController slideNav = null;
+
+        if (doubleNavigationController instanceof SplitNavigationController) {
+            splitNav = (SplitNavigationController) doubleNavigationController;
+        }
+
+        if (doubleNavigationController instanceof ThreadSlideController) {
+            slideNav = (ThreadSlideController) doubleNavigationController;
+        }
+
+        if (splitNav != null) {
+            // Create a threadview inside a toolbarnav in the right part of the split layout
+            if (splitNav.getRightController() instanceof StyledToolbarNavigationController) {
+                StyledToolbarNavigationController navigationController = (StyledToolbarNavigationController) splitNav.getRightController();
+
+                if (navigationController.getTop() instanceof ViewThreadController) {
+                    ((ViewThreadController) navigationController.getTop()).loadThread(threadLoadable);
+                }
+            } else {
+                StyledToolbarNavigationController navigationController = new StyledToolbarNavigationController(context);
+                splitNav.setRightController(navigationController);
+                ViewThreadController viewThreadController = new ViewThreadController(context);
+                viewThreadController.setLoadable(threadLoadable);
+                navigationController.pushController(viewThreadController, false);
+            }
+            splitNav.switchToController(false);
+        } else if (slideNav != null) {
+            // Create a threadview in the right part of the slide nav *without* a toolbar
+            if (slideNav.getRightController() instanceof ViewThreadController) {
+                ((ViewThreadController) slideNav.getRightController()).loadThread(threadLoadable);
+            } else {
+                ViewThreadController viewThreadController = new ViewThreadController(context);
+                viewThreadController.setLoadable(threadLoadable);
+                slideNav.setRightController(viewThreadController);
+            }
+            slideNav.switchToController(false);
+        } else {
+            // the target ThreadNav must be pushed to the parent nav controller
+            // (BrowseController -> ToolbarNavigationController)
+            ViewThreadController viewThreadController = new ViewThreadController(context);
+            viewThreadController.setLoadable(threadLoadable);
+            navigationController.pushController(viewThreadController, animated);
+        }
+    }
+
+    public void onEvent(BoardManager.BoardsChangedMessage event) {
         loadBoards();
     }
 
-    private void loadBoard(Board board) {
-        Loadable loadable = new Loadable(board.value);
-        loadable.mode = Loadable.Mode.CATALOG;
-        loadable.generateTitle();
-        navigationItem.title = board.key;
+    public void loadBoard(Board board) {
+        Loadable loadable = databaseManager.getDatabaseLoadableManager().get(Loadable.forCatalog(board.code));
+        loadable.title = board.name;
+        navigationItem.title = board.name;
 
-        threadLayout.getPresenter().unbindLoadable();
-        threadLayout.getPresenter().bindLoadable(loadable);
-        threadLayout.getPresenter().requestData();
+        ThreadPresenter presenter = threadLayout.getPresenter();
+        presenter.unbindLoadable();
+        presenter.bindLoadable(loadable);
+        presenter.requestData();
 
         for (FloatingMenuItem item : boardItems) {
             if (((FloatingMenuItemBoard) item).board == board) {
                 navigationItem.middleMenu.setSelectedItem(item);
+                break;
             }
         }
+        ((ToolbarNavigationController) navigationController).toolbar.updateTitle(navigationItem);
     }
 
     private void loadBoards() {
-        List<Board> boards = ChanApplication.getBoardManager().getSavedBoards();
+        List<Board> boards = Chan.getBoardManager().getSavedBoards();
         boardItems = new ArrayList<>();
         for (Board board : boards) {
             FloatingMenuItem item = new FloatingMenuItemBoard(board);
@@ -177,7 +334,7 @@ public class BrowseController extends ThreadController implements ToolbarMenuIte
         public Board board;
 
         public FloatingMenuItemBoard(Board board) {
-            super(board.id, board.key);
+            super(board.id, board.name);
             this.board = board;
         }
     }
@@ -216,7 +373,7 @@ public class BrowseController extends ThreadController implements ToolbarMenuIte
             if (position >= 0 && position < items.size()) {
                 return items.get(position).getText();
             } else {
-                return context.getString(R.string.board_select_add);
+                return context.getString(R.string.thread_board_select_add);
             }
         }
 

@@ -1,7 +1,24 @@
+/*
+ * Clover - 4chan browser https://github.com/Floens/Clover/
+ * Copyright (C) 2014  Floens
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.floens.chan.ui.settings;
 
-import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.support.v7.app.AlertDialog;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
@@ -16,6 +33,10 @@ import static org.floens.chan.utils.AndroidUtils.dp;
 public class StringSettingView extends SettingView implements View.OnClickListener {
     private final Setting<String> setting;
     private final String dialogTitle;
+
+    public StringSettingView(SettingsController settingsController, Setting<String> setting, int name, int dialogTitle) {
+        this(settingsController, setting, getString(name), getString(dialogTitle));
+    }
 
     public StringSettingView(SettingsController settingsController, Setting<String> setting, String name, String dialogTitle) {
         super(settingsController, name);
@@ -43,6 +64,7 @@ public class StringSettingView extends SettingView implements View.OnClickListen
         editText.setImeOptions(EditorInfo.IME_FLAG_NO_FULLSCREEN);
         editText.setText(setting.get());
         editText.setSingleLine(true);
+        editText.setSelection(editText.getText().length());
 
         container.addView(editText, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
 

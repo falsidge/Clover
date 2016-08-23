@@ -1,30 +1,29 @@
-# Clover - 4chan browser for Android
+# Clover - 4chan browser for Android  
+[![build status](https://travis-ci.org/Floens/Clover.svg?branch=dev)](https://travis-ci.org/Floens/Clover)
 
-[![Get it on Google Play](https://developer.android.com/images/brand/en_generic_rgb_wo_60.png)](https://play.google.com/store/apps/details?id=org.floens.chan)
+Clover is a fast Android app for browsing [4chan](https://www.4chan.org/).  
+Clover adds inline replying, thread watching, notifications, themes, pass support, filters and a whole lot more. Clover is licensed under the GPL and will always be free.
 
-
-Clover is a fast Android app for browsing 4chan.  
-This repo contains all the code for Clover.
-
-[Website](http://floens.github.io/Clover/)  
-[Google Play](https://play.google.com/store/apps/details?id=org.floens.chan)  
-[APK downloads](https://github.com/Floens/Clover/releases)
-
-
-## Joining the beta
-[Join this G+ community](https://plus.google.com/communities/108906508206092146956) and follow the instructions in the "About this community" box.
-
+[Clover website](http://floens.github.io/Clover/)  
+[Get Clover from F-Droid](https://floens.github.io/Clover/#fdroid)  
+[APK releases](https://floens.github.io/Clover/#releases)  
+[Donate](https://floens.github.io/Clover/#donate)  
 
 ## Contributing
-See the [Clover setup guide](https://github.com/Floens/Clover/wiki/Building-Clover) when you want to make changes to the code.  
-[The issues page](https://github.com/Floens/Clover/issues) is for reporting bugs and feature requests.  
-Be sure to search for existing items on the todo list and issues page before reporting anything.
+Contributing to Clover is appreciated, there's always stuff to do or bugs to fix. I keep the todo list of Clover in the 
+[Clover Trello board](https://trello.com/b/V6gclKvM/clover).  
+[Make a new theme](https://github.com/Floens/Clover/wiki/Adding-a-new-theme)  
 
 
-## TODO
-[Clover todo list](https://gist.github.com/Floens/cd7937a1d8f06f5540bc)
+## Issues and features
+[The issues page](https://github.com/Floens/Clover/issues) is for reporting bugs and feature requests. Please search before reporting an issue to avoid duplicates.  
+Also take a look at the [Trello board](https://trello.com/b/V6gclKvM/clover) to see if your issue or feature has already been considered.  
+
+
+## Building Clover
+See the [Clover setup guide](https://github.com/Floens/Clover/wiki/Building-Clover) for a guide on building Clover.  
 
 
 ## License
 * Clover is [GPLv3](https://github.com/Floens/Clover/blob/master/COPYING.txt)
-* [Licenses of the used libraries](https://rawgit.com/Floens/Clover/master/Clover/app/src/main/assets/html/licenses.html).
+* [Licenses of the used libraries](https://github.com/Floens/Clover/master/Clover/app/src/main/assets/html/licenses.html).

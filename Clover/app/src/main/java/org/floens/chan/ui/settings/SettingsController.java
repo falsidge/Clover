@@ -1,3 +1,20 @@
+/*
+ * Clover - 4chan browser https://github.com/Floens/Clover/
+ * Copyright (C) 2014  Floens
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.floens.chan.ui.settings;
 
 import android.content.Context;
@@ -44,17 +61,20 @@ public class SettingsController extends Controller implements AndroidUtils.OnMea
     @Override
     public boolean onMeasured(View view) {
         setMargins();
-        return true;
+        return false;
     }
 
     public void onPreferenceChange(SettingView item) {
-        if ((item instanceof ListSettingView) || (item instanceof StringSettingView) || (item instanceof LinkSettingView)) {
+        if ((item instanceof ListSettingView)
+                || (item instanceof StringSettingView)
+                || (item instanceof IntegerSettingView)
+                || (item instanceof LinkSettingView)) {
             setDescriptionText(item.view, item.getTopDescription(), item.getBottomDescription());
         }
     }
 
     private void setMargins() {
-        boolean tablet = view.getWidth() > dp(500); // TODO is tablet
+        boolean tablet = AndroidUtils.isTablet(context);
 
         int margin = 0;
         if (tablet) {
@@ -82,7 +102,7 @@ public class SettingsController extends Controller implements AndroidUtils.OnMea
 
     protected void setSettingViewVisibility(SettingView settingView, boolean visible, boolean animated) {
         if (animated) {
-            AnimationUtils.animateHeight(settingView.view, visible);
+            AnimationUtils.animateHeight(settingView.view, visible, ((View) settingView.view.getParent()).getWidth());
         } else {
             settingView.view.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
@@ -113,7 +133,10 @@ public class SettingsController extends Controller implements AndroidUtils.OnMea
                 String topValue = settingView.getTopDescription();
                 String bottomValue = settingView.getBottomDescription();
 
-                if ((settingView instanceof ListSettingView) || (settingView instanceof LinkSettingView) || (settingView instanceof StringSettingView)) {
+                if ((settingView instanceof ListSettingView)
+                        || (settingView instanceof LinkSettingView)
+                        || (settingView instanceof StringSettingView)
+                        || (settingView instanceof IntegerSettingView)) {
                     preferenceView = (ViewGroup) inf.inflate(R.layout.setting_link, groupLayout, false);
                 } else if (settingView instanceof BooleanSettingView) {
                     preferenceView = (ViewGroup) inf.inflate(R.layout.setting_boolean, groupLayout, false);
@@ -145,7 +168,7 @@ public class SettingsController extends Controller implements AndroidUtils.OnMea
                     bottom.setText(bottomText);
                 }
 
-                AnimationUtils.animateHeight(bottom, bottomText != null);
+                AnimationUtils.animateHeight(bottom, bottomText != null, ((View) view.getParent()).getWidth());
             } else {
                 bottom.setText(bottomText);
                 bottom.setVisibility(bottomText == null ? View.GONE : View.VISIBLE);

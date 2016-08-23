@@ -1,3 +1,20 @@
+/*
+ * Clover - 4chan browser https://github.com/Floens/Clover/
+ * Copyright (C) 2014  Floens
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.floens.chan.ui.view;
 
 import android.content.Context;
@@ -41,6 +58,30 @@ public class TransitionImageView extends View {
     public TransitionImageView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init();
+    }
+
+    public void setBitmap(Bitmap bitmap) {
+        this.bitmap = bitmap;
+        bitmapRect.set(0, 0, bitmap.getWidth(), bitmap.getHeight());
+
+        // Center inside method
+        float selfWidth = getWidth();
+        float selfHeight = getHeight();
+
+        float destScale = Math.min(
+                selfWidth / (float) bitmap.getWidth(),
+                selfHeight / (float) bitmap.getHeight());
+
+        RectF output = new RectF(
+                (selfWidth - bitmap.getWidth() * destScale) * 0.5f,
+                (selfHeight - bitmap.getHeight() * destScale) * 0.5f, 0, 0);
+
+        output.right = bitmap.getWidth() * destScale + output.left;
+        output.bottom = bitmap.getHeight() * destScale + output.top;
+
+        destRect.set(output);
+
+        matrix.setRectToRect(bitmapRect, destRect, Matrix.ScaleToFit.FILL);
     }
 
     public void setSourceImageView(Point windowLocation, Point viewSize, Bitmap bitmap) {

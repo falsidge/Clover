@@ -28,7 +28,9 @@ public abstract class ControllerTransition {
     public abstract void perform();
 
     public void onCompleted() {
-        this.callback.onControllerTransitionCompleted(this);
+        if (callback != null) {
+            callback.onControllerTransitionCompleted(this);
+        }
     }
 
     public void setCallback(Callback callback) {
@@ -36,6 +38,6 @@ public abstract class ControllerTransition {
     }
 
     public interface Callback {
-        public void onControllerTransitionCompleted(ControllerTransition transition);
+        void onControllerTransitionCompleted(ControllerTransition transition);
     }
 }

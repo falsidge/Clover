@@ -20,16 +20,13 @@ package org.floens.chan.core.model;
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
 
-import org.floens.chan.ChanApplication;
-import org.floens.chan.core.watch.PinWatcher;
-
 @DatabaseTable
 public class Pin {
     @DatabaseField(generatedId = true)
     public int id;
 
     @DatabaseField(canBeNull = false, foreign = true)
-    public Loadable loadable = new Loadable("", -1);
+    public Loadable loadable;
 
     @DatabaseField
     public boolean watching = true;
@@ -52,7 +49,11 @@ public class Pin {
     @DatabaseField
     public String thumbnailUrl = null;
 
-    private PinWatcher pinWatcher;
+    @DatabaseField
+    public int order = -1;
+
+    @DatabaseField
+    public boolean archived = false;
 
     public int getNewPostCount() {
         if (watchLastCount < 0 || watchNewCount < 0) {
@@ -70,38 +71,18 @@ public class Pin {
         }
     }
 
-    public PinWatcher getPinWatcher() {
-        return pinWatcher;
-    }
-
-    public void onBottomPostViewed() {
-        if (pinWatcher != null) {
-            pinWatcher.onViewed();
-        }
-    }
-
-    public void update() {
-        if (pinWatcher != null && watching) {
-            pinWatcher.update();
-        }
-    }
-
-    public void createWatcher() {
-        if (pinWatcher == null) {
-            pinWatcher = new PinWatcher(this);
-        }
-    }
-
-    public void destroyWatcher() {
-        if (pinWatcher != null) {
-            pinWatcher.destroy();
-            pinWatcher = null;
-        }
-    }
-
-    public void toggleWatch() {
-        watching = !watching;
-        ChanApplication.getWatchManager().onPinsChanged();
-        ChanApplication.getWatchManager().invokeLoadNow();
+    public Pin copy() {
+        Pin copy = new Pin();
+        copy.loadable = loadable;
+        copy.watching = watching;
+        copy.watchLastCount = watchLastCount;
+        copy.watchNewCount = watchNewCount;
+        copy.quoteLastCount = quoteLastCount;
+        copy.quoteNewCount = quoteNewCount;
+        copy.isError = isError;
+        copy.thumbnailUrl = thumbnailUrl;
+        copy.order = order;
+        copy.archived = archived;
+        return copy;
     }
 }

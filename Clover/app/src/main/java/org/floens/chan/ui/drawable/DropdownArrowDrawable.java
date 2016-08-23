@@ -1,3 +1,20 @@
+/*
+ * Clover - 4chan browser https://github.com/Floens/Clover/
+ * Copyright (C) 2014  Floens
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.floens.chan.ui.drawable;
 
 import android.graphics.Canvas;
@@ -7,31 +24,44 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
 
-import static org.floens.chan.utils.AndroidUtils.dp;
-
 public class DropdownArrowDrawable extends Drawable {
     private Paint paint = new Paint();
     private Path path = new Path();
     private int width;
     private int height;
+    private float rotation;
+    private int color;
+    private int pressedColor;
 
-    public DropdownArrowDrawable() {
-        width = dp(12);
-        height = dp(6);
+    public DropdownArrowDrawable(int width, int height, boolean down, int color, int pressedColor) {
+        this.width = width;
+        this.height = height;
+        rotation = down ? 0f : 1f;
+        this.color = color;
+        this.pressedColor = pressedColor;
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xffffffff);
-
-        path.moveTo(0, 0);
-        path.lineTo(width, 0);
-        path.lineTo(width / 2, height);
-        path.lineTo(0, 0);
-        path.close();
+        paint.setColor(color);
     }
 
     @Override
     public void draw(Canvas canvas) {
+        path.rewind();
+        path.moveTo(0, height / 4);
+        path.lineTo(width, height / 4);
+        path.lineTo(width / 2, (int) (height * 3f / 4f));
+        path.lineTo(0, height / 4);
+        path.close();
+
+        canvas.save();
+        canvas.rotate(rotation * 180f, width / 2f, height / 2f);
         canvas.drawPath(path, paint);
+        canvas.restore();
+    }
+
+    public void setRotation(float rotation) {
+        this.rotation = rotation;
+        invalidateSelf();
     }
 
     @Override
@@ -52,7 +82,7 @@ public class DropdownArrowDrawable extends Drawable {
                 pressed = true;
             }
         }
-        int color = pressed ? 0x88ffffff : 0xffffffff;
+        int color = pressed ? pressedColor : this.color;
         if (color != paint.getColor()) {
             paint.setColor(color);
             invalidateSelf();

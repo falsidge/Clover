@@ -17,383 +17,295 @@
  */
 package org.floens.chan.ui.adapter;
 
-import android.content.Context;
-import android.text.TextUtils;
-import android.util.AttributeSet;
-import android.view.Gravity;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Filter;
-import android.widget.Filterable;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 
 import org.floens.chan.R;
 import org.floens.chan.core.model.ChanThread;
 import org.floens.chan.core.model.Loadable;
 import org.floens.chan.core.model.Post;
-import org.floens.chan.ui.view.PostView;
+import org.floens.chan.core.settings.ChanSettings;
+import org.floens.chan.ui.cell.PostCellInterface;
+import org.floens.chan.ui.cell.ThreadStatusCell;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
-import static org.floens.chan.utils.AndroidUtils.dp;
-
-public class PostAdapter extends BaseAdapter implements Filterable {
-    private static final int VIEW_TYPE_ITEM = 0;
-    private static final int VIEW_TYPE_STATUS = 1;
-
-    private final Object lock = new Object();
-
-    private final Context context;
+public class PostAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    private static final int TYPE_POST = 0;
+    private static final int TYPE_STATUS = 1;
+    private static final int TYPE_POST_STUB = 2;
+    private static final int TYPE_LAST_SEEN = 3;
 
     private final PostAdapterCallback postAdapterCallback;
-    private final PostView.PostViewCallback postViewCallback;
+    private final PostCellInterface.PostCellCallback postCellCallback;
+    private RecyclerView recyclerView;
 
-    /**
-     * The list with the original data
-     */
+    private final ThreadStatusCell.Callback statusCellCallback;
     private final List<Post> sourceList = new ArrayList<>();
-
-    /**
-     * The list that is displayed (filtered)
-     */
     private final List<Post> displayList = new ArrayList<>();
+    private String error = null;
+    private Post highlightedPost;
+    private String highlightedPostId;
+    private int highlightedPostNo = -1;
+    private String highlightedPostTripcode;
+    private int selectedPost = -1;
+    private int lastSeenIndicatorPosition = -1;
+    private boolean bound;
 
-    private boolean endOfLine;
-    private int lastPostCount = 0;
-    private String statusMessage = null;
-    private String filter = "";
-    private int pendingScrollToPost = -1;
-    private String statusPrefix = "";
+    private ChanSettings.PostViewMode postViewMode;
 
-    public PostAdapter(Context context, PostAdapterCallback postAdapterCallback, PostView.PostViewCallback postViewCallback) {
+    public PostAdapter(RecyclerView recyclerView, PostAdapterCallback postAdapterCallback, PostCellInterface.PostCellCallback postCellCallback, ThreadStatusCell.Callback statusCellCallback) {
+        this.recyclerView = recyclerView;
         this.postAdapterCallback = postAdapterCallback;
-        this.context = context;
-        this.postViewCallback = postViewCallback;
+        this.postCellCallback = postCellCallback;
+        this.statusCellCallback = statusCellCallback;
+
+        setHasStableIds(true);
     }
 
     @Override
-    public int getCount() {
-        return displayList.size() + (showStatusView() ? 1 : 0);
-    }
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        switch (viewType) {
+            case TYPE_POST:
+                int layout = 0;
+                switch (postViewMode) {
+                    case LIST:
+                        layout = R.layout.cell_post;
+                        break;
+                    case CARD:
+                        layout = R.layout.cell_post_card;
+                        break;
+                }
 
-    @Override
-    public int getViewTypeCount() {
-        return 2;
-    }
-
-    @Override
-    public int getItemViewType(int position) {
-        if (position == getCount() - 1) {
-            return showStatusView() ? VIEW_TYPE_STATUS : VIEW_TYPE_ITEM;
-        } else {
-            return VIEW_TYPE_ITEM;
+                PostCellInterface postCell = (PostCellInterface) LayoutInflater.from(parent.getContext()).inflate(layout, parent, false);
+                return new PostViewHolder(postCell);
+            case TYPE_POST_STUB:
+                return new PostViewHolder((PostCellInterface) LayoutInflater.from(parent.getContext()).inflate(R.layout.cell_post_stub, parent, false));
+            case TYPE_LAST_SEEN:
+                return new LastSeenViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.cell_post_last_seen, parent, false));
+            case TYPE_STATUS:
+                StatusViewHolder statusViewHolder = new StatusViewHolder((ThreadStatusCell) LayoutInflater.from(parent.getContext()).inflate(R.layout.cell_thread_status, parent, false));
+                statusViewHolder.threadStatusCell.setCallback(statusCellCallback);
+                statusViewHolder.threadStatusCell.setError(error);
+                return statusViewHolder;
+            default:
+                throw new IllegalStateException();
         }
     }
 
     @Override
-    public Post getItem(int position) {
-        int realPosition = position;
-        if (realPosition >= 0 && realPosition < displayList.size()) {
-            return displayList.get(realPosition);
+    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        int itemViewType = getItemViewType(position);
+        switch (itemViewType) {
+            case TYPE_POST:
+            case TYPE_POST_STUB:
+                PostViewHolder postViewHolder = (PostViewHolder) holder;
+                Post post = displayList.get(getPostPosition(position));
+                boolean highlight = post == highlightedPost || post.id.equals(highlightedPostId) || post.no == highlightedPostNo ||
+                        post.tripcode.equals(highlightedPostTripcode);
+                postViewHolder.postView.setPost(null, post, postCellCallback, highlight, post.no == selectedPost, -1, true, postViewMode);
+                break;
+            case TYPE_STATUS:
+                ((StatusViewHolder) holder).threadStatusCell.update();
+                break;
+            case TYPE_LAST_SEEN:
+                break;
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        int size = displayList.size();
+
+        if (showStatusView()) {
+            size++;
+        }
+
+        if (lastSeenIndicatorPosition >= 0) {
+            size++;
+        }
+
+        return size;
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        if (position == lastSeenIndicatorPosition) {
+            return TYPE_LAST_SEEN;
+        } else if (showStatusView() && position == getItemCount() - 1) {
+            return TYPE_STATUS;
         } else {
-            return null;
+            Post post = displayList.get(getPostPosition(position));
+            if (post.filterStub) {
+                return TYPE_POST_STUB;
+            } else {
+                return TYPE_POST;
+            }
         }
     }
 
     @Override
     public long getItemId(int position) {
-        return position;
-    }
-
-    @Override
-    public View getView(int position, View convertView, ViewGroup parent) {
-        if (position >= getCount() - 1) {
-            onGetBottomView();
-        }
-
-        switch (getItemViewType(position)) {
-            case VIEW_TYPE_ITEM: {
-                if (convertView == null || convertView.getTag() == null || (Integer) convertView.getTag() != VIEW_TYPE_ITEM) {
-                    convertView = new PostView(context);
-                    convertView.setTag(VIEW_TYPE_ITEM);
-                }
-
-                PostView postView = (PostView) convertView;
-                postView.setPost(getItem(position), postViewCallback);
-
-                return postView;
-            }
-            case VIEW_TYPE_STATUS: {
-                return new StatusView(context);
-            }
-        }
-
-        return null;
-    }
-
-    public Filter getFilter() {
-        return new Filter() {
-            @Override
-            protected FilterResults performFiltering(CharSequence constraintRaw) {
-                FilterResults results = new FilterResults();
-
-                if (TextUtils.isEmpty(constraintRaw)) {
-                    ArrayList<Post> tmp;
-                    synchronized (lock) {
-                        tmp = new ArrayList<>(sourceList);
-                    }
-                    results.values = tmp;
-                } else {
-                    List<Post> all;
-                    synchronized (lock) {
-                        all = new ArrayList<>(sourceList);
-                    }
-
-                    List<Post> accepted = new ArrayList<>();
-                    String constraint = constraintRaw.toString().toLowerCase(Locale.ENGLISH);
-
-                    for (Post post : all) {
-                        if (post.comment.toString().toLowerCase(Locale.ENGLISH).contains(constraint) ||
-                                post.subject.toLowerCase(Locale.ENGLISH).contains(constraint)) {
-                            accepted.add(post);
-                        }
-                    }
-
-                    results.values = accepted;
-                }
-
-                return results;
-            }
-
-            @SuppressWarnings("unchecked")
-            @Override
-            protected void publishResults(CharSequence constraint, final FilterResults results) {
-                filter = constraint.toString();
-                synchronized (lock) {
-                    displayList.clear();
-                    displayList.addAll((List<Post>) results.values);
-                }
-                notifyDataSetChanged();
-                postAdapterCallback.onFilteredResults(filter, ((List<Post>) results.values).size(), TextUtils.isEmpty(filter));
-                if (pendingScrollToPost >= 0) {
-                    final int to = pendingScrollToPost;
-                    pendingScrollToPost = -1;
-                    postAdapterCallback.scrollTo(to);
-                }
-            }
-        };
-    }
-
-    public void setFilter(String filter) {
-        getFilter().filter(filter);
-        notifyDataSetChanged();
-    }
-
-    public void setThread(ChanThread thread) {
-        synchronized (lock) {
-            if (thread.archived) {
-                statusPrefix = context.getString(R.string.thread_archived) + " - ";
-            } else if (thread.closed) {
-                statusPrefix = context.getString(R.string.thread_closed) + " - ";
-            } else {
-                statusPrefix = "";
-            }
-
-            sourceList.clear();
-            sourceList.addAll(thread.posts);
-
-            if (!isFiltering()) {
-                displayList.clear();
-                displayList.addAll(sourceList);
-            } else {
-                setFilter(filter);
-            }
-        }
-
-        notifyDataSetChanged();
-    }
-
-    public List<Post> getList() {
-        return sourceList;
-    }
-
-    public void setEndOfLine(boolean endOfLine) {
-        this.endOfLine = endOfLine;
-
-        notifyDataSetChanged();
-    }
-
-    /* TODO
-    public void scrollToPost(int no) {
-        if (isFiltering()) {
-            pendingScrollToPost = no;
+        int itemViewType = getItemViewType(position);
+        if (itemViewType == TYPE_STATUS) {
+            return -1;
+        } else if (itemViewType == TYPE_LAST_SEEN) {
+            return -2;
         } else {
-            notifyDataSetChanged();
+            Post post = displayList.get(getPostPosition(position));
+            int repliesFromSize;
+            synchronized (post.repliesFrom) {
+                repliesFromSize = post.repliesFrom.size();
+            }
+            return ((long) repliesFromSize << 32L) + (long) post.no;
+        }
+    }
 
-            synchronized (lock) {
-                for (int i = 0; i < displayList.size(); i++) {
-                    if (displayList.get(i).no == no) {
-                        if (Math.abs(i - listView.getFirstVisiblePosition()) > 20 || listView.getChildCount() == 0) {
-                            listView.setSelection(i);
-                        } else {
-                            ScrollerRunnable r = new ScrollerRunnable(listView);
-                            r.start(i);
-                        }
+    public void setThread(ChanThread thread, PostsFilter filter) {
+        bound = true;
+        showError(null);
 
-                        break;
-                    }
+        sourceList.clear();
+        sourceList.addAll(thread.posts);
+
+        displayList.clear();
+        displayList.addAll(filter.apply(sourceList));
+
+        lastSeenIndicatorPosition = -1;
+        if (thread.loadable.lastViewed >= 0) {
+            // Do not process the last post, the indicator does not have to appear at the bottom
+            for (int i = 0, displayListSize = displayList.size() - 1; i < displayListSize; i++) {
+                Post post = displayList.get(i);
+                if (post.no == thread.loadable.lastViewed) {
+                    lastSeenIndicatorPosition = i + 1;
+                    break;
                 }
             }
         }
-    }*/
 
-    public void setStatusMessage(String loadMessage) {
-        this.statusMessage = loadMessage;
+        // Update all, recyclerview will figure out all the animations
+        notifyDataSetChanged();
     }
 
-    public String getStatusMessage() {
-        return statusMessage;
+    public List<Post> getDisplayList() {
+        return displayList;
     }
 
-    private void onGetBottomView() {
-        /*if (postAdapterCallback.getLoadable().isBoardMode() && !endOfLine) {
-            // Try to load more posts
-            threadManager.requestNextData();
-        }*/
+    public void cleanup() {
+        highlightedPost = null;
+        highlightedPostId = null;
+        highlightedPostNo = -1;
+        highlightedPostTripcode = null;
+        selectedPost = -1;
+        lastSeenIndicatorPosition = -1;
+        error = null;
+        bound = false;
+    }
 
-        if (lastPostCount != sourceList.size()) {
-            lastPostCount = sourceList.size();
-            postAdapterCallback.onListScrolledToBottom();
-            notifyDataSetChanged();
+    public void showError(String error) {
+        this.error = error;
+        if (showStatusView()) {
+            final int childCount = recyclerView.getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                View child = recyclerView.getChildAt(i);
+                if (child instanceof ThreadStatusCell) {
+                    ThreadStatusCell threadStatusCell = (ThreadStatusCell) child;
+                    threadStatusCell.setError(error);
+                    threadStatusCell.update();
+                }
+            }
         }
+    }
+
+    public void highlightPost(Post post) {
+        highlightedPost = post;
+        highlightedPostId = null;
+        highlightedPostNo = -1;
+        highlightedPostTripcode = null;
+        notifyDataSetChanged();
+    }
+
+    public void highlightPostId(String id) {
+        highlightedPost = null;
+        highlightedPostId = id;
+        highlightedPostNo = -1;
+        highlightedPostTripcode = null;
+        notifyDataSetChanged();
+    }
+
+    public void highlightPostTripcode(String tripcode) {
+        highlightedPost = null;
+        highlightedPostId = null;
+        highlightedPostNo = -1;
+        highlightedPostTripcode = tripcode;
+        notifyDataSetChanged();
+    }
+
+    public void highlightPostNo(int no) {
+        highlightedPost = null;
+        highlightedPostId = null;
+        highlightedPostNo = no;
+        highlightedPostTripcode = null;
+        notifyDataSetChanged();
+    }
+
+    public void selectPost(int no) {
+        selectedPost = no;
+        notifyDataSetChanged();
+    }
+
+    public void setPostViewMode(ChanSettings.PostViewMode postViewMode) {
+        this.postViewMode = postViewMode;
+    }
+
+    public int getPostPosition(int position) {
+        int postPosition = position;
+        if (lastSeenIndicatorPosition >= 0 && position > lastSeenIndicatorPosition) {
+            postPosition--;
+        }
+        return postPosition;
+    }
+
+    public int getScrollPosition(int displayPosition) {
+        int postPosition = displayPosition;
+        if (lastSeenIndicatorPosition >= 0 && displayPosition > lastSeenIndicatorPosition) {
+            postPosition++;
+        }
+        return postPosition;
     }
 
     private boolean showStatusView() {
-        Loadable l = postAdapterCallback.getLoadable();
-        if (l != null) {
-            return l.isBoardMode() || l.isThreadMode();
-        } else {
-            return false;
+        return postAdapterCallback.getLoadable().isThreadMode();
+    }
+
+    public static class PostViewHolder extends RecyclerView.ViewHolder {
+        private PostCellInterface postView;
+
+        public PostViewHolder(PostCellInterface postView) {
+            super((View) postView);
+            this.postView = postView;
         }
     }
 
-    private boolean isFiltering() {
-        return !TextUtils.isEmpty(filter);
+    public static class StatusViewHolder extends RecyclerView.ViewHolder {
+        private ThreadStatusCell threadStatusCell;
+
+        public StatusViewHolder(ThreadStatusCell threadStatusCell) {
+            super(threadStatusCell);
+            this.threadStatusCell = threadStatusCell;
+        }
+    }
+
+    public static class LastSeenViewHolder extends RecyclerView.ViewHolder {
+        public LastSeenViewHolder(View itemView) {
+            super(itemView);
+        }
     }
 
     public interface PostAdapterCallback {
-        public void onFilteredResults(String filter, int count, boolean all);
-
-        public Loadable getLoadable();
-
-        public void onListScrolledToBottom();
-
-        public void onListStatusClicked();
-
-        public void scrollTo(int position);
-    }
-
-    public class StatusView extends LinearLayout {
-        boolean detached = false;
-
-        public StatusView(Context activity) {
-            super(activity);
-            init();
-        }
-
-        public StatusView(Context activity, AttributeSet attr) {
-            super(activity, attr);
-            init();
-        }
-
-        public StatusView(Context activity, AttributeSet attr, int style) {
-            super(activity, attr, style);
-            init();
-        }
-
-        public void init() {
-            // TODO
-            /*
-            ChanLoader chanLoader = threadManager.getChanLoader();
-            if (chanLoader == null)
-                return;
-
-            setGravity(Gravity.CENTER);
-
-            Loadable loadable = chanLoader.getLoadable();
-            if (loadable.isThreadMode()) {
-                String error = getStatusMessage();
-                if (error != null) {
-                    setText(error);
-                } else {
-                    if (threadManager.isWatching()) {
-                        long time = chanLoader.getTimeUntilLoadMore() / 1000L;
-                        if (time == 0) {
-                            setText(statusPrefix + context.getString(R.string.thread_refresh_now));
-                        } else {
-                            setText(statusPrefix + context.getString(R.string.thread_refresh_countdown, time));
-                        }
-
-                        new Handler().postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (!detached) {
-                                    notifyDataSetChanged();
-                                }
-                            }
-                        }, 1000);
-                    } else {
-                        if (chanLoader.getTimeUntilLoadMore() == 0) {
-                            setText(statusPrefix + context.getString(R.string.thread_refresh_now));
-                        } else {
-                            setText(statusPrefix + context.getString(R.string.thread_refresh_bar_inactive));
-                        }
-                    }
-
-                    setOnClickListener(new OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            ChanLoader chanLoader = threadManager.getChanLoader();
-                            if (chanLoader != null) {
-                                chanLoader.requestMoreDataAndResetTimer();
-                                setText(context.getString(R.string.thread_refresh_now));
-                            }
-
-                            notifyDataSetChanged();
-                        }
-                    });
-                }
-
-                Utils.setPressedDrawable(this);
-            } else if (loadable.isBoardMode()) {
-                if (endOfLine) {
-                    setText(context.getString(R.string.thread_load_end_of_line));
-                } else {
-                    setProgressBar();
-                }
-            }*/
-        }
-
-        @Override
-        protected void onDetachedFromWindow() {
-            super.onDetachedFromWindow();
-            detached = true;
-        }
-
-        private void setText(String string) {
-            TextView text = new TextView(context);
-            text.setText(string);
-            text.setGravity(Gravity.CENTER);
-            addView(text, new LayoutParams(LayoutParams.MATCH_PARENT, dp(48)));
-        }
-
-        private void setProgressBar() {
-            addView(new ProgressBar(context));
-        }
+        Loadable getLoadable();
     }
 }

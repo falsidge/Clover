@@ -17,8 +17,6 @@
  */
 package org.floens.chan.chan;
 
-import org.floens.chan.R;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,7 +32,7 @@ public abstract class ImageSearch {
     static {
         engines.add(new ImageSearch() {
             public int getId() {
-                return R.id.action_0;
+                return 0;
             }
 
             public String getName() {
@@ -48,7 +46,7 @@ public abstract class ImageSearch {
 
         engines.add(new ImageSearch() {
             public int getId() {
-                return R.id.action_1;
+                return 1;
             }
 
             public String getName() {
@@ -57,6 +55,34 @@ public abstract class ImageSearch {
 
             public String getUrl(String imageUrl) {
                 return "http://iqdb.org/?url=" + imageUrl;
+            }
+        });
+
+        engines.add(new ImageSearch() {
+            public int getId() {
+                return 2;
+            }
+
+            public String getName() {
+                return "SauceNao";
+            }
+
+            public String getUrl(String imageUrl) {
+                return "https://saucenao.com/search.php?url=" + imageUrl;
+            }
+        });
+
+        engines.add(new ImageSearch() {
+            public int getId() {
+                return 3;
+            }
+
+            public String getName() {
+                return "TinEye";
+            }
+
+            public String getUrl(String imageUrl) {
+                return "http://tineye.com/search/?url=" + imageUrl;
             }
         });
     }

@@ -17,28 +17,36 @@
  */
 package org.floens.chan.core.model;
 
+import android.support.annotation.NonNull;
 import android.text.TextPaint;
 import android.text.style.ClickableSpan;
 import android.view.View;
 
-import org.floens.chan.utils.ThemeHelper;
+import org.floens.chan.core.settings.ChanSettings;
+import org.floens.chan.ui.cell.PostCell;
+import org.floens.chan.ui.theme.Theme;
 
 /**
- * Anything that links to something in a post uses this entity.
+ * A Clickable span that handles post clicks. These are created in ChanParser for post quotes, spoilers etc.<br>
+ * PostCell has a {@link PostCell.PostViewMovementMethod}, that searches spans at the location the TextView was tapped,
+ * and handled if it was a PostLinkable.
  */
 public class PostLinkable extends ClickableSpan {
-    public static enum Type {
+    public enum Type {
         QUOTE, LINK, SPOILER, THREAD
     }
 
+    public final Theme theme;
     public final Post post;
     public final String key;
     public final Object value;
     public final Type type;
 
-    private boolean clicked = false;
+    private boolean spoilerVisible = ChanSettings.revealTextSpoilers.get();
+    private int markedNo = -1;
 
-    public PostLinkable(Post post, String key, Object value, Type type) {
+    public PostLinkable(Theme theme, Post post, String key, Object value, Type type) {
+        this.theme = theme;
         this.post = post;
         this.key = key;
         this.value = value;
@@ -47,33 +55,36 @@ public class PostLinkable extends ClickableSpan {
 
     @Override
     public void onClick(View widget) {
-        if (post.getLinkableListener() != null) {
-            post.getLinkableListener().onLinkableClick(this);
-        }
-        clicked = true;
+        spoilerVisible = !spoilerVisible;
+    }
+
+    public void setMarkedNo(int markedNo) {
+        this.markedNo = markedNo;
     }
 
     @Override
-    public void updateDrawState(TextPaint ds) {
+    public void updateDrawState(@NonNull TextPaint ds) {
         if (type == Type.QUOTE || type == Type.LINK || type == Type.THREAD) {
             if (type == Type.QUOTE) {
-                if (value instanceof Integer && post.getLinkableListener() != null && (Integer) value == post.getLinkableListener().getHighlightQuotesWithNo()) {
-                    ds.setColor(ThemeHelper.getInstance().getHighlightQuoteColor());
+                if (value instanceof Integer && ((int) value) == markedNo) {
+                    ds.setColor(theme.highlightQuoteColor);
                 } else {
-                    ds.setColor(ThemeHelper.getInstance().getQuoteColor());
+                    ds.setColor(theme.quoteColor);
                 }
             } else if (type == Type.LINK) {
-                ds.setColor(ThemeHelper.getInstance().getLinkColor());
+                ds.setColor(theme.linkColor);
             } else {
-                ds.setColor(ThemeHelper.getInstance().getQuoteColor());
+                ds.setColor(theme.quoteColor);
             }
 
             ds.setUnderlineText(true);
         } else if (type == Type.SPOILER) {
-            if (!clicked) {
-                ds.setColor(ThemeHelper.getInstance().getSpoilerColor());
-                ds.bgColor = ThemeHelper.getInstance().getSpoilerColor();
-                ds.setUnderlineText(false);
+            ds.bgColor = theme.spoilerColor;
+            ds.setUnderlineText(false);
+            if (!spoilerVisible) {
+                ds.setColor(theme.spoilerColor);
+            } else {
+                ds.setColor(theme.textColorRevealSpoiler);
             }
         }
     }

@@ -1,3 +1,51 @@
+New in 2.1.3 (2016-01-28)
+- New Google Play release
+
+
+New in 2.1.2 (2016-01-17)
+- Fix for a crash on Android 4
+- Changed the top boards again
+
+
+New in 2.1.1 (2016-01-17)
+- Fix for the freeze bug
+- Bug fixes
+- The reply button color can be changed
+- Reply button hides on scroll
+
+
+New in 2.1.0 (2015-11-18)
+This is the release version of 2.0.0 that added:
+- Swipeable controllers
+- Fixed recaptcha v1
+- Added some more advanced options
+- Bug fixes
+
+
+New in 2.0.0 (2015-08-23)
+- New design.
+- New inline reply layout.
+- Support for thread hiding.
+- Support for filtering threads, making posts either highlighted, hidden or completely removed.
+- Support for history.
+- More themes were added.
+- Album downloads have been improved.
+- Catalog mode now uses cards.
+- More advanced options added.
+- Minor features and bug fixes.
+
+
+New in 1.2.11 (2015-06-20)
+- Update/fix captchas
+
+
+New in 1.2.10 (2015-04-01)
+With the help of recaptcha support and nin9tyfour (developer of the iOS 4chan app Fortune), recaptcha v2 has been implemented. This means you will see the captcha box you also see on the desktop.
+
+- Replaced fallback captcha with the captcha v2 box
+- Bug fixes
+
+
 New in 1.2.9 (2015-02-06)
 - More captcha fixing, should be easier now.
 

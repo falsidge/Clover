@@ -22,7 +22,11 @@ public class Time {
         return System.currentTimeMillis();
     }
 
-    public static long get(long other) {
-        return System.currentTimeMillis() - other;
+    public static long startTiming() {
+        return System.nanoTime();
+    }
+
+    public static void endTiming(String tag, long start) {
+        Logger.v("Timer", tag + " took " + ((System.nanoTime() - start) / 1_000_000.0) + "ms");
     }
 }

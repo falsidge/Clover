@@ -19,23 +19,96 @@ package org.floens.chan.core.settings;
 
 import android.content.SharedPreferences;
 import android.os.Environment;
+import android.text.TextUtils;
 
-import org.floens.chan.ChanApplication;
+import org.floens.chan.Chan;
+import org.floens.chan.R;
+import org.floens.chan.core.manager.WatchManager;
+import org.floens.chan.ui.adapter.PostsFilter;
 import org.floens.chan.utils.AndroidUtils;
 
 import java.io.File;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+
+import de.greenrobot.event.EventBus;
 
 public class ChanSettings {
-    public static final StringSetting theme;
+    public enum MediaAutoLoadMode implements OptionSettingItem {
+        // ALways auto load, either wifi or mobile
+        ALL("all"),
+        // Only auto load if on wifi
+        WIFI("wifi"),
+        // Never auto load
+        NONE("none");
+
+        String name;
+
+        MediaAutoLoadMode(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+
+    public enum PostViewMode implements OptionSettingItem {
+        LIST("list"),
+        CARD("grid");
+
+        String name;
+
+        PostViewMode(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+
+    public enum LayoutMode implements OptionSettingItem {
+        AUTO("auto"),
+        PHONE("phone"),
+        SLIDE("slide"),
+        SPLIT("split");
+
+        String name;
+
+        LayoutMode(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+
+    private static Proxy proxy;
+
+    private static final StringSetting theme;
+    public static final OptionsSetting<LayoutMode> layoutMode;
     public static final StringSetting fontSize;
+    public static final BooleanSetting fontCondensed;
     public static final BooleanSetting openLinkConfirmation;
     public static final BooleanSetting autoRefreshThread;
-    public static final BooleanSetting imageAutoLoad;
-    public static final BooleanSetting videoAutoLoad;
+    //    public static final BooleanSetting imageAutoLoad;
+    public static final OptionsSetting<MediaAutoLoadMode> imageAutoLoadNetwork;
+    public static final OptionsSetting<MediaAutoLoadMode> videoAutoLoadNetwork;
     public static final BooleanSetting videoOpenExternal;
+    public static final BooleanSetting textOnly;
+    public static final BooleanSetting videoErrorIgnore;
+    public static final OptionsSetting<PostViewMode> boardViewMode;
+    public static final IntegerSetting boardGridSpanCount;
+    public static final StringSetting boardOrder;
 
     public static final StringSetting postDefaultName;
     public static final BooleanSetting postPinThread;
+    public static final BooleanSetting postNewCaptcha;
 
     public static final BooleanSetting developer;
 
@@ -43,252 +116,250 @@ public class ChanSettings {
     public static final BooleanSetting saveOriginalFilename;
     public static final BooleanSetting shareUrl;
     public static final BooleanSetting networkHttps;
-    public static final BooleanSetting forcePhoneLayout;
+    public static final BooleanSetting enableReplyFab;
     public static final BooleanSetting anonymize;
     public static final BooleanSetting anonymizeIds;
+    public static final BooleanSetting showAnonymousName;
+    public static final BooleanSetting revealImageSpoilers;
+    public static final BooleanSetting revealTextSpoilers;
     public static final BooleanSetting repliesButtonsBottom;
+    public static final BooleanSetting confirmExit;
+    public static final BooleanSetting tapNoReply;
+    public static final BooleanSetting volumeKeysScrolling;
+    public static final BooleanSetting postFullDate;
+    public static final BooleanSetting postFileInfo;
+    public static final BooleanSetting postFilename;
+    public static final BooleanSetting neverHideToolbar;
+    public static final BooleanSetting controllerSwipeable;
+    public static final BooleanSetting saveBoardFolder;
 
     public static final BooleanSetting watchEnabled;
     public static final BooleanSetting watchCountdown;
     public static final BooleanSetting watchBackground;
-    public static final StringSetting watchBackgroundTimeout;
+    public static final IntegerSetting watchBackgroundInterval;
     public static final StringSetting watchNotifyMode;
     public static final StringSetting watchSound;
+    public static final BooleanSetting watchPeek;
     public static final StringSetting watchLed;
 
     public static final StringSetting passToken;
     public static final StringSetting passPin;
     public static final StringSetting passId;
 
+    public static final BooleanSetting historyEnabled;
+
+    public static final IntegerSetting previousVersion;
+
+    public static final BooleanSetting proxyEnabled;
+    public static final StringSetting proxyAddress;
+    public static final IntegerSetting proxyPort;
+
+    public static final CounterSetting settingsOpenCounter;
+    public static final CounterSetting historyOpenCounter;
+    public static final CounterSetting replyOpenCounter;
+    public static final CounterSetting threadOpenCounter;
+
+    public enum TestOptions implements OptionSettingItem {
+        ONE("one"),
+        TWO("two"),
+        THREE("three");
+
+        String name;
+
+        TestOptions(String name) {
+            this.name = name;
+        }
+
+        public String getName() {
+            return name;
+        }
+    }
+
     static {
         SharedPreferences p = AndroidUtils.getPreferences();
 
         theme = new StringSetting(p, "preference_theme", "light");
-        fontSize = new StringSetting(p, "preference_font", "14");
-        openLinkConfirmation = new BooleanSetting(p, "preference_open_link_confirmation", true);
+
+        layoutMode = new OptionsSetting<>(p, "preference_layout_mode", LayoutMode.values(), LayoutMode.AUTO);
+
+        boolean tablet = AndroidUtils.getRes().getBoolean(R.bool.is_tablet);
+
+        fontSize = new StringSetting(p, "preference_font", tablet ? "16" : "14");
+        fontCondensed = new BooleanSetting(p, "preference_font_condensed", false);
+        openLinkConfirmation = new BooleanSetting(p, "preference_open_link_confirmation", false);
         autoRefreshThread = new BooleanSetting(p, "preference_auto_refresh_thread", true);
-        imageAutoLoad = new BooleanSetting(p, "preference_image_auto_load", true);
-        videoAutoLoad = new BooleanSetting(p, "preference_autoplay", false);
+//        imageAutoLoad = new BooleanSetting(p, "preference_image_auto_load", true);
+        imageAutoLoadNetwork = new OptionsSetting<>(p, "preference_image_auto_load_network", MediaAutoLoadMode.values(), MediaAutoLoadMode.WIFI);
+        videoAutoLoadNetwork = new OptionsSetting<>(p, "preference_video_auto_load_network", MediaAutoLoadMode.values(), MediaAutoLoadMode.WIFI);
         videoOpenExternal = new BooleanSetting(p, "preference_video_external", false);
+        textOnly = new BooleanSetting(p, "preference_text_only", false);
+        videoErrorIgnore = new BooleanSetting(p, "preference_video_error_ignore", false);
+        boardViewMode = new OptionsSetting<>(p, "preference_board_view_mode", PostViewMode.values(), PostViewMode.LIST);
+        boardGridSpanCount = new IntegerSetting(p, "preference_board_grid_span_count", 0);
+        boardOrder = new StringSetting(p, "preference_board_order", PostsFilter.Order.BUMP.name);
 
         postDefaultName = new StringSetting(p, "preference_default_name", "");
         postPinThread = new BooleanSetting(p, "preference_pin_on_post", false);
+        postNewCaptcha = new BooleanSetting(p, "preference_new_captcha", false);
 
         developer = new BooleanSetting(p, "preference_developer", false);
 
         saveLocation = new StringSetting(p, "preference_image_save_location", Environment.getExternalStorageDirectory() + File.separator + "Clover");
+        saveLocation.addCallback(new Setting.SettingCallback<String>() {
+            @Override
+            public void onValueChange(Setting setting, String value) {
+                EventBus.getDefault().post(new SettingChanged<>(saveLocation));
+            }
+        });
         saveOriginalFilename = new BooleanSetting(p, "preference_image_save_original", false);
         shareUrl = new BooleanSetting(p, "preference_image_share_url", false);
         networkHttps = new BooleanSetting(p, "preference_network_https", true);
-        forcePhoneLayout = new BooleanSetting(p, "preference_force_phone_layout", false);
+        enableReplyFab = new BooleanSetting(p, "preference_enable_reply_fab", true);
         anonymize = new BooleanSetting(p, "preference_anonymize", false);
         anonymizeIds = new BooleanSetting(p, "preference_anonymize_ids", false);
+        showAnonymousName = new BooleanSetting(p, "preference_show_anonymous_name", false);
+        revealImageSpoilers = new BooleanSetting(p, "preference_reveal_image_spoilers", false);
+        revealTextSpoilers = new BooleanSetting(p, "preference_reveal_text_spoilers", false);
         repliesButtonsBottom = new BooleanSetting(p, "preference_buttons_bottom", false);
+        confirmExit = new BooleanSetting(p, "preference_confirm_exit", false);
+        tapNoReply = new BooleanSetting(p, "preference_tap_no_reply", false);
+        volumeKeysScrolling = new BooleanSetting(p, "preference_volume_key_scrolling", false);
+        postFullDate = new BooleanSetting(p, "preference_post_full_date", false);
+        postFileInfo = new BooleanSetting(p, "preference_post_file_info", true);
+        postFilename = new BooleanSetting(p, "preference_post_filename", false);
+        neverHideToolbar = new BooleanSetting(p, "preference_never_hide_toolbar", false);
+        controllerSwipeable = new BooleanSetting(p, "preference_controller_swipeable", true);
+        saveBoardFolder = new BooleanSetting(p, "preference_save_subboard", false);
 
         watchEnabled = new BooleanSetting(p, "preference_watch_enabled", false);
+        watchEnabled.addCallback(new Setting.SettingCallback<Boolean>() {
+            @Override
+            public void onValueChange(Setting setting, Boolean value) {
+                Chan.getWatchManager().onWatchEnabledChanged(value);
+            }
+        });
         watchCountdown = new BooleanSetting(p, "preference_watch_countdown", false);
         watchBackground = new BooleanSetting(p, "preference_watch_background_enabled", false);
-        watchBackgroundTimeout = new StringSetting(p, "preference_watch_background_timeout", "60");
+        watchBackground.addCallback(new Setting.SettingCallback<Boolean>() {
+            @Override
+            public void onValueChange(Setting setting, Boolean value) {
+                Chan.getWatchManager().onBackgroundWatchingChanged(value);
+            }
+        });
+        watchBackgroundInterval = new IntegerSetting(p, "preference_watch_background_interval", WatchManager.DEFAULT_BACKGROUND_INTERVAL);
         watchNotifyMode = new StringSetting(p, "preference_watch_notify_mode", "all");
-        watchSound = new StringSetting(p, "preference_watch_sound", "all");
+        watchSound = new StringSetting(p, "preference_watch_sound", "quotes");
+        watchPeek = new BooleanSetting(p, "preference_watch_peek", true);
         watchLed = new StringSetting(p, "preference_watch_led", "ffffffff");
 
         passToken = new StringSetting(p, "preference_pass_token", "");
         passPin = new StringSetting(p, "preference_pass_pin", "");
         passId = new StringSetting(p, "preference_pass_id", "");
-    }
 
-    private static SharedPreferences p() {
-        return AndroidUtils.getPreferences();
+        historyEnabled = new BooleanSetting(p, "preference_history_enabled", true);
+
+        previousVersion = new IntegerSetting(p, "preference_previous_version", 0);
+
+        proxyEnabled = new BooleanSetting(p, "preference_proxy_enabled", false);
+        proxyEnabled.addCallback(new Setting.SettingCallback<Boolean>() {
+            @Override
+            public void onValueChange(Setting setting, Boolean value) {
+                loadProxy();
+            }
+        });
+        proxyAddress = new StringSetting(p, "preference_proxy_address", "");
+        proxyAddress.addCallback(new Setting.SettingCallback<String>() {
+            @Override
+            public void onValueChange(Setting setting, String value) {
+                loadProxy();
+            }
+        });
+        proxyPort = new IntegerSetting(p, "preference_proxy_port", 80);
+        proxyPort.addCallback(new Setting.SettingCallback<Integer>() {
+            @Override
+            public void onValueChange(Setting setting, Integer value) {
+                loadProxy();
+            }
+        });
+        loadProxy();
+
+        settingsOpenCounter = new CounterSetting(p, "counter_settings_open");
+        historyOpenCounter = new CounterSetting(p, "counter_history_open");
+        replyOpenCounter = new CounterSetting(p, "counter_reply_open");
+        threadOpenCounter = new CounterSetting(p, "counter_thread_open");
+
+        // Old (but possibly still in some users phone)
+        // preference_board_view_mode default "list"
+        // preference_board_editor_filler default false
+        // preference_pass_enabled default false
+        // preference_autoplay false
+        // preference_watch_background_timeout "60" the old timeout background setting in minutes
     }
 
     public static boolean passLoggedIn() {
         return passId.get().length() > 0;
     }
 
-    public static boolean getOpenLinkConfirmation() {
-        return p().getBoolean("preference_open_link_confirmation", true);
-    }
+    public static ThemeColor getThemeAndColor() {
+        String themeRaw = ChanSettings.theme.get();
 
-    public static String getDefaultName() {
-        return p().getString("preference_default_name", "");
-    }
+        String theme = themeRaw;
+        String color = null;
+        String accentColor = null;
 
-    public static boolean getPinOnPost() {
-        return p().getBoolean("preference_pin_on_post", false);
-    }
-
-    public static boolean getDeveloper() {
-        return p().getBoolean("preference_developer", false);
-    }
-
-    public static void setDeveloper(boolean developer) {
-        p().edit().putBoolean("preference_developer", developer).commit();
-    }
-
-    public static File getImageSaveDirectory() {
-        String path = p().getString("preference_image_save_location", null);
-        File file;
-        if (path == null) {
-            file = new File(Environment.getExternalStorageDirectory() + File.separator + "Clover");
-        } else {
-            file = new File(path);
+        String[] splitted = themeRaw.split(",");
+        if (splitted.length >= 2) {
+            theme = splitted[0];
+            color = splitted[1];
+            if (splitted.length == 3) {
+                accentColor = splitted[2];
+            }
         }
 
-        return file;
+        return new ThemeColor(theme, color, accentColor);
     }
 
-    public static void setImageSaveDirectory(File file) {
-        p().edit().putString("preference_image_save_location", file.getAbsolutePath()).commit();
-    }
-
-    public static boolean getImageSaveOriginalFilename() {
-        return p().getBoolean("preference_image_save_original", false);
-    }
-
-    public static boolean getImageShareUrl() {
-        return p().getBoolean("preference_image_share_url", false);
-    }
-
-    public static boolean getWatchEnabled() {
-        return p().getBoolean("preference_watch_enabled", false);
+    public static void setThemeAndColor(ThemeColor themeColor) {
+        if (TextUtils.isEmpty(themeColor.color) || TextUtils.isEmpty(themeColor.accentColor)) {
+            throw new IllegalArgumentException();
+        }
+        ChanSettings.theme.set(themeColor.theme + "," + themeColor.color + "," + themeColor.accentColor);
     }
 
     /**
-     * This also calls updateRunningState on the PinnedService to start/stop the
-     * service as needed.
+     * Returns a {@link Proxy} if a proxy is enabled, <tt>null</tt> otherwise.
      *
-     * @param enabled
+     * @return a proxy or null
      */
-    public static void setWatchEnabled(boolean enabled) {
-        if (getWatchEnabled() != enabled) {
-            p().edit().putBoolean("preference_watch_enabled", enabled).commit();
-            ChanApplication.getWatchManager().onWatchEnabledChanged(enabled);
+    public static Proxy getProxy() {
+        return proxy;
+    }
+
+    private static void loadProxy() {
+        if (proxyEnabled.get()) {
+            proxy = new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(proxyAddress.get(), proxyPort.get()));
+        } else {
+            proxy = null;
         }
     }
 
-    public static boolean getWatchCountdownVisibleEnabled() {
-        return p().getBoolean("preference_watch_countdown", false);
-    }
+    public static class ThemeColor {
+        public String theme;
+        public String color;
+        public String accentColor;
 
-    public static boolean getWatchBackgroundEnabled() {
-        return p().getBoolean("preference_watch_background_enabled", false);
-    }
-
-    public static int getWatchBackgroundTimeout() {
-        String number = p().getString("preference_watch_background_timeout", "60");
-        return Integer.parseInt(number);
-    }
-
-    public static String getWatchNotifyMode() {
-        return p().getString("preference_watch_notify_mode", "all");
-    }
-
-    public static String getWatchSound() {
-        return p().getString("preference_watch_sound", "quotes");
-    }
-
-    public static long getWatchLed() {
-        String raw = p().getString("preference_watch_led", "ffffffff");
-        return Long.parseLong(raw, 16);
-    }
-
-    public static boolean getVideoAutoPlay() {
-        return getImageAutoLoad() && !getVideoExternal() && p().getBoolean("preference_autoplay", false);
-    }
-
-    public static boolean getThreadAutoRefresh() {
-        return p().getBoolean("preference_auto_refresh_thread", true);
-    }
-
-    public static boolean getImageAutoLoad() {
-        return p().getBoolean("preference_image_auto_load", true);
-    }
-
-    public static boolean getPassEnabled() {
-        return p().getBoolean("preference_pass_enabled", false);
-    }
-
-    public static void setPassEnabled(boolean enabled) {
-        if (getPassEnabled() != enabled) {
-            p().edit().putBoolean("preference_pass_enabled", enabled).commit();
+        public ThemeColor(String theme, String color, String accentColor) {
+            this.theme = theme;
+            this.color = color;
+            this.accentColor = accentColor;
         }
     }
 
-    public static String getPassToken() {
-        return p().getString("preference_pass_token", "");
-    }
+    public static class SettingChanged<T> {
+        public final Setting<T> setting;
 
-    public static String getPassPin() {
-        return p().getString("preference_pass_pin", "");
-    }
-
-    public static void setPassId(String id) {
-        p().edit().putString("preference_pass_id", id).commit();
-    }
-
-    public static String getPassId() {
-        return p().getString("preference_pass_id", "");
-    }
-
-    public static String getTheme() {
-        return p().getString("preference_theme", "light");
-    }
-
-    public static boolean getForcePhoneLayout() {
-        return p().getBoolean("preference_force_phone_layout", false);
-    }
-
-    public static boolean getBoardEditorFillerEnabled() {
-        return p().getBoolean("preference_board_editor_filler", false);
-    }
-
-    public static boolean setBoardEditorFillerEnabled(boolean enabled) {
-        return p().edit().putBoolean("preference_board_editor_filler", enabled).commit();
-    }
-
-    public static String getBoardViewMode() {
-        return p().getString("preference_board_view_mode", "list");
-    }
-
-    public static void setBoardViewMode(String mode) {
-        p().edit().putString("preference_board_view_mode", mode).commit();
-    }
-
-    public static boolean getAnonymize() {
-        return p().getBoolean("preference_anonymize", false);
-    }
-
-    public static boolean getAnonymizeIds() {
-        return p().getBoolean("preference_anonymize_ids", false);
-    }
-
-    public static boolean getReplyButtonsBottom() {
-        return p().getBoolean("preference_buttons_bottom", false);
-    }
-
-    public static String getBoardMode() {
-        return p().getString("preference_board_mode", "catalog");
-    }
-
-    public static boolean getVideoErrorIgnore() {
-        return p().getBoolean("preference_video_error_ignore", false);
-    }
-
-    public static void setVideoErrorIgnore(boolean show) {
-        p().edit().putBoolean("preference_video_error_ignore", show).commit();
-    }
-
-    public static boolean getVideoExternal() {
-        return p().getBoolean("preference_video_external", false);
-    }
-
-    public static int getFontSize() {
-        String font = p().getString("preference_font", null);
-        return font == null ? 14 : Integer.parseInt(font);
-    }
-
-    public static boolean getNetworkHttps() {
-        return p().getBoolean("preference_network_https", true);
+        public SettingChanged(Setting<T> setting) {
+            this.setting = setting;
+        }
     }
 }

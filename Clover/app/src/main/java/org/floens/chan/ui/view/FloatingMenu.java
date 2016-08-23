@@ -34,10 +34,10 @@ import org.floens.chan.R;
 import org.floens.chan.utils.AndroidUtils;
 import org.floens.chan.utils.Logger;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.floens.chan.utils.AndroidUtils.dp;
+import static org.floens.chan.utils.AndroidUtils.getAttrColor;
 
 public class FloatingMenu {
     public static final int POPUP_WIDTH_AUTO = -1;
@@ -49,6 +49,7 @@ public class FloatingMenu {
     private int anchorOffsetX;
     private int anchorOffsetY;
     private int popupWidth = POPUP_WIDTH_AUTO;
+    private int popupHeight = -1;
     private List<FloatingMenuItem> items;
     private FloatingMenuItem selectedItem;
     private ListAdapter adapter;
@@ -84,6 +85,13 @@ public class FloatingMenu {
         }
     }
 
+    public void setPopupHeight(int height) {
+        this.popupHeight = height;
+        if (popupWindow != null) {
+            popupWindow.setHeight(height);
+        }
+    }
+
     public void setItems(List<FloatingMenuItem> items) {
         this.items = items;
         if (popupWindow != null) {
@@ -111,17 +119,19 @@ public class FloatingMenu {
         popupWindow.setVerticalOffset(-anchor.getHeight() + anchorOffsetY);
         popupWindow.setHorizontalOffset(anchorOffsetX);
         if (popupWidth == POPUP_WIDTH_ANCHOR) {
-            popupWindow.setContentWidth(Math.min(dp(4 * 56), anchor.getWidth()));
+            popupWindow.setContentWidth(Math.min(dp(8 * 56), Math.max(dp(4 * 56), anchor.getWidth())));
         } else if (popupWidth == POPUP_WIDTH_AUTO) {
             popupWindow.setContentWidth(dp(3 * 56));
         } else {
             popupWindow.setContentWidth(popupWidth);
         }
 
-        List<String> stringItems = new ArrayList<>(items.size());
+        if (popupHeight > 0) {
+            popupWindow.setHeight(popupHeight);
+        }
+
         int selectedPosition = 0;
         for (int i = 0; i < items.size(); i++) {
-            stringItems.add(items.get(i).getText());
             if (items.get(i) == selectedItem) {
                 selectedPosition = i;
             }
@@ -130,15 +140,18 @@ public class FloatingMenu {
         if (adapter != null) {
             popupWindow.setAdapter(adapter);
         } else {
-            popupWindow.setAdapter(new FloatingMenuArrayAdapter(context, R.layout.toolbar_menu_item, stringItems));
+            popupWindow.setAdapter(new FloatingMenuArrayAdapter(context, R.layout.toolbar_menu_item, items));
         }
 
         popupWindow.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 if (position >= 0 && position < items.size()) {
-                    callback.onFloatingMenuItemClicked(FloatingMenu.this, items.get(position));
-                    popupWindow.dismiss();
+                    FloatingMenuItem item = items.get(position);
+                    if (item.isEnabled()) {
+                        callback.onFloatingMenuItemClicked(FloatingMenu.this, item);
+                        popupWindow.dismiss();
+                    }
                 } else {
                     callback.onFloatingMenuItemClicked(FloatingMenu.this, null);
                 }
@@ -168,6 +181,7 @@ public class FloatingMenu {
                 }
                 globalLayoutListener = null;
                 popupWindow = null;
+                callback.onFloatingMenuDismissed(FloatingMenu.this);
             }
         });
 
@@ -179,12 +193,21 @@ public class FloatingMenu {
         return popupWindow != null && popupWindow.isShowing();
     }
 
-    public interface FloatingMenuCallback {
-        public void onFloatingMenuItemClicked(FloatingMenu menu, FloatingMenuItem item);
+    public void dismiss() {
+        if (popupWindow != null && popupWindow.isShowing()) {
+            popupWindow.dismiss();
+            popupWindow = null;
+        }
     }
 
-    private static class FloatingMenuArrayAdapter extends ArrayAdapter<String> {
-        public FloatingMenuArrayAdapter(Context context, int resource, List<String> objects) {
+    public interface FloatingMenuCallback {
+        void onFloatingMenuItemClicked(FloatingMenu menu, FloatingMenuItem item);
+
+        void onFloatingMenuDismissed(FloatingMenu menu);
+    }
+
+    private static class FloatingMenuArrayAdapter extends ArrayAdapter<FloatingMenuItem> {
+        public FloatingMenuArrayAdapter(Context context, int resource, List<FloatingMenuItem> objects) {
             super(context, resource, objects);
         }
 
@@ -194,8 +217,12 @@ public class FloatingMenu {
                 convertView = LayoutInflater.from(getContext()).inflate(R.layout.toolbar_menu_item, parent, false);
             }
 
+            FloatingMenuItem item = getItem(position);
+
             TextView textView = (TextView) convertView;
-            textView.setText(getItem(position));
+            textView.setText(item.getText());
+            textView.setEnabled(item.isEnabled());
+            textView.setTextColor(getAttrColor(getContext(), item.isEnabled() ? R.attr.text_color_primary : R.attr.text_color_hint));
             textView.setTypeface(AndroidUtils.ROBOTO_MEDIUM);
 
             return textView;
