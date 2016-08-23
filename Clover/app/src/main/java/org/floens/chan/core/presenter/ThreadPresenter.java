@@ -417,8 +417,9 @@ public class ThreadPresenter implements ChanLoader.ChanLoaderCallback, PostAdapt
         menu.add(new FloatingMenuItem(POST_OPTION_OPEN_BROWSER, R.string.action_open_browser));
         menu.add(new FloatingMenuItem(POST_OPTION_SHARE, R.string.post_share));
         menu.add(new FloatingMenuItem(POST_OPTION_COPY_TEXT, R.string.post_copy_text));
-        menu.add(new FloatingMenuItem(POST_OPTION_REPORT, R.string.post_report));
         menu.add(new FloatingMenuItem(POST_OPTION_COPY_LINKS, R.string.post_copy_link ));
+        menu.add(new FloatingMenuItem(POST_OPTION_REPORT, R.string.post_report));
+
 
         if (!loadable.isThreadMode()) {
             menu.add(new FloatingMenuItem(POST_OPTION_HIDE, R.string.post_hide));

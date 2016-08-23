@@ -271,7 +271,14 @@ public class ThreadLayout extends CoordinatorLayout implements ThreadPresenter.T
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         ClipboardManager clipboard = (ClipboardManager) AndroidUtils.getAppContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                        ClipData clip = ClipData.newPlainText("Post link", (String) linkables.get(which).value );
+                        PostLinkable linkable = linkables.get(which);
+                        String link = "";
+                        if (linkable.type == PostLinkable.Type.QUOTE || linkable.type == PostLinkable.Type.LINK) {
+                            link = linkable.value.toString();
+                        } else if (linkable.type == PostLinkable.Type.THREAD) {
+                            link = ((Integer) ((PostLinkable.ThreadLink) linkable.value).postId).toString();
+                        }
+                        ClipData clip = ClipData.newPlainText("Post link", link);
                         clipboard.setPrimaryClip(clip);
                         Toast.makeText(getContext(), R.string.post_link_copied, Toast.LENGTH_SHORT).show();
 
